@@ -1,6 +1,7 @@
 /**
  *  @file
  *  @copyright defined in eos/LICENSE
+ * 2019年1月25日,hzx阅读源代码,并且做相应注释.
  */
 #pragma once
 
@@ -120,11 +121,12 @@ namespace eosiosystem {
    // 来自boost库的multi_index，多索引容器，一张只有一列的表，表中没一行是一个结构体
    // 表中每一列按照某个索引从小到大排序，voters_table按照primary_key排序
    typedef eosio::multi_index< N(voters), voter_info>  voters_table; 
-
+   // BP表
    typedef eosio::multi_index< N(producers), producer_info,
                                indexed_by<N(prototalvote), const_mem_fun<producer_info, double, &producer_info::by_votes>  >
                                >  producers_table;
-   typedef eosio::singleton<N(global), eosio_global_state> global_state_singleton;
+   
+   typedef eosio::singleton<N(global), eosio_global_state> global_state_singleton; // 单立表，可以参考eosiolib/singleton.hpp，对multi_index的简单包装
 
 
    //   static constexpr uint32_t     max_inflation_rate = 5;  // 5% annual inflation
@@ -155,6 +157,12 @@ namespace eosiosystem {
           *  If transfer == true, then 'receiver' can unstake to their account
           *  Else 'from' can unstake at any time.
           */
+         // 抵押代币获取cpu和宽带资源
+         // from,从那个账号扣除抵押的代币
+         // receiver, 抵押的代币的接受者,表示抵押获取的资源作用在那个账号上?
+         // stake_net_quantity: 用来抵押宽带资源的代币数量
+         // stake_cpu_quantity:用来抵押计算资源的代币数量
+         // transfer,是否接受者可以主动解除抵押获得代币,如果不是,只有发起者能够解除抵押收回代币
          void delegatebw( account_name from, account_name receiver,
                           asset stake_net_quantity, asset stake_cpu_quantity, bool transfer );
 
@@ -175,6 +183,9 @@ namespace eosiosystem {
           *  The 'from' account loses voting power as a result of this call and
           *  all producer tallies are updated.
           */
+         // 解除抵押,释放资源,收回代币,含义同delegatebw
+         // receiver指的是解除cpu和宽带资源的账号
+         // from指的是将代币还回的账号
          void undelegatebw( account_name from, account_name receiver,
                             asset unstake_net_quantity, asset unstake_cpu_quantity );
 
@@ -184,6 +195,7 @@ namespace eosiosystem {
           * tokens provided. An inline transfer from receiver to system contract of
           * tokens will be executed.
           */
+         // 购买一定token的资源或者购买一定数量的内存
          void buyram( account_name buyer, account_name receiver, asset tokens );
          void buyrambytes( account_name buyer, account_name receiver, uint32_t bytes );
 
@@ -197,27 +209,35 @@ namespace eosiosystem {
           *  This action is called after the delegation-period to claim all pending
           *  unstaked tokens belonging to owner
           */
+         // undelegatebw函数之后调用,把抵押的代币退回账户
          void refund( account_name owner );
 
          // functions defined in voting.cpp
-
+         // 注册成为超级节点
+         // 账户名, 账户共要,网站地址,机房地理位置
          void regproducer( const account_name producer, const public_key& producer_key, const std::string& url, uint16_t location );
-
+         
+         // 注销超级节点
          void unregprod( const account_name producer );
+
 
          void setram( uint64_t max_ram_size );
 
+         // 投票, 投票人, 代理人, 投票候选表.可以自己投,也可以交给代理人
          void voteproducer( const account_name voter, const account_name proxy, const std::vector<account_name>& producers );
 
+         // 注册成为代理人
          void regproxy( const account_name proxy, bool isproxy );
 
          void setparams( const eosio::blockchain_parameters& params );
 
+         // 支付超级节点的奖励
          // functions defined in producer_pay.cpp
          void claimrewards( const account_name& owner );
 
          void setpriv( account_name account, uint8_t ispriv );
 
+         // 
          void rmvproducer( account_name producer );
 
          void bidname( account_name bidder, account_name newname, asset bid );
