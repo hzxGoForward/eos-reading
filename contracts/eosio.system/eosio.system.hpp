@@ -46,11 +46,11 @@ namespace eosiosystem {
       uint64_t             last_pervote_bucket_fill = 0;
       int64_t              pervote_bucket = 0;
       int64_t              perblock_bucket = 0;
-      uint32_t             total_unpaid_blocks = 0; /// all blocks which have been produced but not paid
+      uint32_t             total_unpaid_blocks = 0; /// 未领取奖励的区块数量
       int64_t              total_activated_stake = 0;
       uint64_t             thresh_activated_stake_time = 0;
       uint16_t             last_producer_schedule_size = 0;
-      double               total_producer_vote_weight = 0; /// the sum of all producer votes
+      double               total_producer_vote_weight = 0; /// 总投票数
       block_timestamp      last_name_close;
 
       // explicit serialization macro is not necessary, used here only to improve compilation time
@@ -62,7 +62,7 @@ namespace eosiosystem {
    };
 
    struct producer_info {
-      account_name          owner;
+      account_name          owner;  // uint64_t类型
       double                total_votes = 0;
       eosio::public_key     producer_key; /// a packed public key object
       bool                  is_active = true;
@@ -81,6 +81,7 @@ namespace eosiosystem {
                         (unpaid_blocks)(last_claim_time)(location) )
    };
 
+   // 投票用户的信息
    struct voter_info {
       account_name                owner = 0; /// the voter
       account_name                proxy = 0; /// the proxy set by the voter, if any
@@ -91,15 +92,19 @@ namespace eosiosystem {
        *  Every time a vote is cast we must first "undo" the last vote weight, before casting the
        *  new vote weight.  Vote weight is calculated as:
        *
-       *  stated.amount * 2 ^ ( weeks_since_launch/weeks_per_year)
+       *  stated.amount * 2 ^ ( weeks_since_launch/weeks_per_year)， 
+       *  EOS中投票权重更新可以参考 https://zhuanlan.zhihu.com/p/44585727
+       *  EOS系统的时间戳从2000年1月1日00::00::00开始算起，系统时间经过的秒数，weeks_since_launch指的是（voter上次投票的时间转换为unix秒数 - 系统启动时间的秒数）/(一周时间的秒数)
+       *  求出上次投票的时间距离系统启动时间算起，经历了多少周，再除以一年52周，计算得到了权重w
+       *  这一次用户投票的权重 = staked*2^(w)
        */
-      double                      last_vote_weight = 0; /// the vote weight cast the last time the vote was updated
+      double                      last_vote_weight = 0; /// 最近一次投票时用户的权重
 
       /**
        * Total vote weight delegated to this voter.
        */
-      double                      proxied_vote_weight= 0; /// the total vote weight delegated to this voter as a proxy
-      bool                        is_proxy = 0; /// whether the voter is a proxy for others
+      double                      proxied_vote_weight= 0; /// 代理人拥有的权重
+      bool                        is_proxy = 0; /// 是否是一个代理人
 
 
       uint32_t                    reserved1 = 0;
@@ -112,14 +117,15 @@ namespace eosiosystem {
       EOSLIB_SERIALIZE( voter_info, (owner)(proxy)(producers)(staked)(last_vote_weight)(proxied_vote_weight)(is_proxy)(reserved1)(reserved2)(reserved3) )
    };
 
-   typedef eosio::multi_index< N(voters), voter_info>  voters_table;
-
+   // 来自boost库的multi_index，多索引容器，一张只有一列的表，表中没一行是一个结构体
+   // 表中每一列按照某个索引从小到大排序，voters_table按照primary_key排序
+   typedef eosio::multi_index< N(voters), voter_info>  voters_table; 
 
    typedef eosio::multi_index< N(producers), producer_info,
                                indexed_by<N(prototalvote), const_mem_fun<producer_info, double, &producer_info::by_votes>  >
                                >  producers_table;
-
    typedef eosio::singleton<N(global), eosio_global_state> global_state_singleton;
+
 
    //   static constexpr uint32_t     max_inflation_rate = 5;  // 5% annual inflation
    static constexpr uint32_t     seconds_per_day = 24 * 3600;
@@ -127,8 +133,8 @@ namespace eosiosystem {
 
    class system_contract : public native {
       private:
-         voters_table           _voters;
          producers_table        _producers;
+         voters_table           _voters;
          global_state_singleton _global;
 
          eosio_global_state     _gstate;
