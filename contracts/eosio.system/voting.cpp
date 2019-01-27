@@ -107,6 +107,7 @@ namespace eosiosystem {
       }
    }
 
+   /// 根据抵押的stake换算出该用户的投票权重
    double stake2vote( int64_t staked ) {
       /// TODO subtract 2080 brings the large numbers closer to this decade
       double weight = int64_t( (now() - (block_timestamp::block_timestamp_epoch / 1000)) / (seconds_per_day * 7) )  / double( 52 );
@@ -133,6 +134,7 @@ namespace eosiosystem {
       update_votes( voter_name, proxy, producers, true );   // 更新投票信息
    }
 
+   /// voter_name表示投票人, proxy表示本次投票过程中指定的代理人, producers表示BP列表
    void system_contract::update_votes( const account_name voter_name, const account_name proxy, const std::vector<account_name>& producers, bool voting ) {
       //validate input
       if ( proxy ) {
@@ -146,7 +148,7 @@ namespace eosiosystem {
          }
       }
 
-      auto voter = _voters.find(voter_name);
+      auto voter = _voters.find(voter_name); // 根据voter_name找到voter信息, 返回voter_info
       eosio_assert( voter != _voters.end(), "user must stake before they can vote" ); /// staking creates voter object
       eosio_assert( !proxy || !voter->is_proxy, "account registered as a proxy is not allowed to use a proxy" );
 
@@ -162,36 +164,42 @@ namespace eosiosystem {
          }
       }
 
-      auto new_vote_weight = stake2vote( voter->staked );
+      auto new_vote_weight = stake2vote( voter->staked );   /// 计算本次投票的权重
       if( voter->is_proxy ) {
          new_vote_weight += voter->proxied_vote_weight;
       }
 
+      /// 账户, 权重,是否更新?该变量没看懂
       boost::container::flat_map<account_name, pair<double, bool /*new*/> > producer_deltas;
-      if ( voter->last_vote_weight > 0 ) {
+      
+      
+      /// 每个producer减去上次投票所得的权重
+      if ( voter->last_vote_weight > 0 ) { 
+         /// 更新代理人的投票权重                                   
          if( voter->proxy ) {
             auto old_proxy = _voters.find( voter->proxy );
             eosio_assert( old_proxy != _voters.end(), "old proxy not found" ); //data corruption
             _voters.modify( old_proxy, 0, [&]( auto& vp ) {
-                  vp.proxied_vote_weight -= voter->last_vote_weight;
+                  vp.proxied_vote_weight -= voter->last_vote_weight;/// 先减去上次投票获得的权重
                });
-            propagate_weight_change( *old_proxy );
+            propagate_weight_change( *old_proxy );   
          } else {
             for( const auto& p : voter->producers ) {
                auto& d = producer_deltas[p];
-               d.first -= voter->last_vote_weight;
+               d.first -= voter->last_vote_weight; /// 先减去上次投票获得的权重
                d.second = false;
             }
          }
       }
 
+      /// 每个producer加上本次投票所得的权重
       if( proxy ) {
          auto new_proxy = _voters.find( proxy );
          eosio_assert( new_proxy != _voters.end(), "invalid proxy specified" ); //if ( !voting ) { data corruption } else { wrong vote }
          eosio_assert( !voting || new_proxy->is_proxy, "proxy not found" );
          if ( new_vote_weight >= 0 ) {
             _voters.modify( new_proxy, 0, [&]( auto& vp ) {
-                  vp.proxied_vote_weight += new_vote_weight;
+                  vp.proxied_vote_weight += new_vote_weight; /// 加上本次投票的权重
                });
             propagate_weight_change( *new_proxy );
          }
@@ -199,7 +207,7 @@ namespace eosiosystem {
          if( new_vote_weight >= 0 ) {
             for( const auto& p : producers ) {
                auto& d = producer_deltas[p];
-               d.first += new_vote_weight;
+               d.first += new_vote_weight;   /// 加上本次投票的权重
                d.second = true;
             }
          }
@@ -214,7 +222,7 @@ namespace eosiosystem {
                if ( p.total_votes < 0 ) { // floating point arithmetics can give small negative numbers
                   p.total_votes = 0;
                }
-               _gstate.total_producer_vote_weight += pd.second.first;
+               _gstate.total_producer_vote_weight += pd.second.first;   /// 重新统计所有投票数
                //eosio_assert( p.total_votes >= 0, "something bad happened" );
             });
          } else {
