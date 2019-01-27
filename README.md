@@ -1,5 +1,8 @@
 
 # EOSIO - The Most Powerful Infrastructure for Decentralized Applications
+## PS
+this repository is used to read and understand the source code of eosio for myself, I will not change the source code of eosio, the only difference between this repository and eosio are some comments, those comments were wrritten by Chinese.
+
 
 [![Build status](https://badge.buildkite.com/370fe5c79410f7d695e4e34c500b4e86e3ac021c6b1f739e20.svg?branch=master)](https://buildkite.com/EOSIO/eosio)
 
@@ -93,5 +96,4 @@ EOSIO currently supports the following operating systems:
 <a name="gettingstarted"></a>
 ## Getting Started
 Instructions detailing the process of getting the software, building it, running a simple test network that produces blocks, account creation and uploading a sample contract to the blockchain can be found in [Getting Started](https://developers.eos.io/eosio-home/docs) on the [EOSIO Developer Portal](https://developers.eos.io).
-## Comments
-本代码是本人用来阅读源代码的记录,与EOS源代码相比,只是在源文件中添加了自己阅读源码的注释.
+

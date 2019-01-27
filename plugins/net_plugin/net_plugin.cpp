@@ -1863,6 +1863,7 @@ namespace eosio {
    }
 
 
+   /// 该函数循环监听信息
    void net_plugin_impl::start_listen_loop() {
       auto socket = std::make_shared<tcp::socket>( std::ref( app().get_io_service() ) );
       acceptor->async_accept( *socket, [socket,this]( boost::system::error_code ec ) {
@@ -2778,7 +2779,7 @@ namespace eosio {
          my->started_sessions = 0;
 
          my->use_socket_read_watermark = options.at( "use-socket-read-watermark" ).as<bool>();
-
+         // 使用boost库的resolver来处理与网络相关的数据格式的转换
          my->resolver = std::make_shared<tcp::resolver>( std::ref( app().get_io_service()));
          if( options.count( "p2p-listen-endpoint" ) && options.at("p2p-listen-endpoint").as<string>().length()) {
             my->p2p_address = options.at( "p2p-listen-endpoint" ).as<string>();
@@ -2788,8 +2789,9 @@ namespace eosio {
             tcp::resolver::query query( tcp::v4(), host.c_str(), port.c_str());
             // Note: need to add support for IPv6 too?
 
+            // 得到监听地址
             my->listen_endpoint = *my->resolver->resolve( query );
-
+            // 充值boost socket 网络接收器
             my->acceptor.reset( new tcp::acceptor( app().get_io_service()));
 
             if( options.count( "p2p-server-address" )) {
@@ -2816,7 +2818,7 @@ namespace eosio {
          if( options.count( "agent-name" )) {
             my->user_agent_name = options.at( "agent-name" ).as<string>();
          }
-
+         // 处理连接设置
          if( options.count( "allowed-connection" )) {
             const std::vector<std::string> allowed_remotes = options["allowed-connection"].as<std::vector<std::string>>();
             for( const std::string& allowed_remote : allowed_remotes ) {
@@ -2851,13 +2853,13 @@ namespace eosio {
                my->private_keys[key_id_to_wif_pair.first] = fc::crypto::private_key( key_id_to_wif_pair.second );
             }
          }
-
+         // 查找依赖的链插件
          my->chain_plug = app().find_plugin<chain_plugin>();
          EOS_ASSERT( my->chain_plug, chain::missing_chain_plugin_exception, ""  );
          my->chain_id = my->chain_plug->get_chain_id();
          fc::rand_pseudo_bytes( my->node_id.data(), my->node_id.data_size());
          ilog( "my node_id is ${id}", ("id", my->node_id));
-
+         // 重置心跳定时器
          my->keepalive_timer.reset( new boost::asio::steady_timer( app().get_io_service()));
          my->ticker();
       } FC_LOG_AND_RETHROW()
@@ -2866,6 +2868,7 @@ namespace eosio {
    void net_plugin::plugin_startup() {
       my->producer_plug = app().find_plugin<producer_plugin>();
       if( my->acceptor ) {
+         // 常见的网络服务操作,打开监听服务,设置选项,绑定地址,启动监听
          my->acceptor->open(my->listen_endpoint.protocol());
          my->acceptor->set_option(tcp::acceptor::reuse_address(true));
          try {
@@ -2877,7 +2880,7 @@ namespace eosio {
          }
          my->acceptor->listen();
          ilog("starting listener, max clients is ${mc}",("mc",my->max_client_count));
-         my->start_listen_loop();
+         my->start_listen_loop();   // 循环监听函数
       }
       chain::controller&cc = my->chain_plug->chain();
       {
@@ -2890,11 +2893,11 @@ namespace eosio {
          my->max_nodes_per_host = 0;
          ilog( "node in read-only mode setting max_nodes_per_host to 0 to prevent connections" );
       }
-
+      // 启动连接和交易到期的监视
       my->start_monitors();
 
       for( auto seed_node : my->supplied_peers ) {
-         connect( seed_node );
+         connect( seed_node );// 连接种子节点,接入p2p网络
       }
 
       if(fc::get_logger_map().find(logger_name) != fc::get_logger_map().end())

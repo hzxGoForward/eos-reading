@@ -140,7 +140,7 @@ namespace eosiosystem {
       if ( proxy ) {
          eosio_assert( producers.size() == 0, "cannot vote for producers and proxy at same time" );
          eosio_assert( voter_name != proxy, "cannot proxy to self" );
-         require_recipient( proxy ); // 判断是否具有代理人权限
+         require_recipient( proxy ); // 判断本次的代理人是否具有投票权限
       } else {
          eosio_assert( producers.size() <= 30, "attempt to vote for too many producers" );
          for( size_t i = 1; i < producers.size(); ++i ) {
@@ -165,13 +165,14 @@ namespace eosiosystem {
       }
 
       auto new_vote_weight = stake2vote( voter->staked );   /// 计算本次投票的权重
+
+      /// QUESTION:为什么如果是代理,则还要加上voter->proxied_vote_weight?是何道理?
       if( voter->is_proxy ) {
          new_vote_weight += voter->proxied_vote_weight;
       }
 
       /// 账户, 权重,是否更新?该变量没看懂
       boost::container::flat_map<account_name, pair<double, bool /*new*/> > producer_deltas;
-      
       
       /// 每个producer减去上次投票所得的权重
       if ( voter->last_vote_weight > 0 ) { 
