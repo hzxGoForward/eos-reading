@@ -81,6 +81,7 @@ namespace eosiosystem {
           *     therefore, this method will execute an inline buyram from receiver for newacnt in
           *     an amount equal to the current new account creation fee.
           */
+         // 创建新账户,creater表示创建人,newact表示新的账户? 
          void newaccount( account_name     creator,
                           account_name     newact
                           /*  no need to parse authorites

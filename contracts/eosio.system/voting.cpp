@@ -32,7 +32,11 @@ namespace eosiosystem {
     *  @pre producer is not already registered
     *  @pre producer to register is an account
     *  @pre authority of producer to register
-    *
+    *  _producers指的是BP的多索引容器
+    *   typedef eosio::multi_index< N(producers), producer_info,
+                               indexed_by<N(prototalvote), const_mem_fun<producer_info, double, &producer_info::by_votes>  >
+                               >  producers_table;
+       producers_table        _producers;
     */
    void system_contract::regproducer( const account_name producer, const eosio::public_key& producer_key, const std::string& url, uint16_t location ) {
       eosio_assert( url.size() < 512, "url too long" );
@@ -60,6 +64,7 @@ namespace eosiosystem {
       }
    }
 
+   //注销超级节点
    void system_contract::unregprod( const account_name producer ) {
       require_auth( producer );
 
@@ -69,7 +74,7 @@ namespace eosiosystem {
             info.deactivate();
       });
    }
-
+   // 更新最新选出的21个超级节点
    void system_contract::update_elected_producers( block_timestamp block_time ) {
       _gstate.last_producer_schedule_update = block_time;
 
@@ -94,9 +99,9 @@ namespace eosiosystem {
       producers.reserve(top_producers.size());
       for( const auto& item : top_producers )
          producers.push_back(item.first);
-
+      // 为什么使用pack?有什么用吗?
       bytes packed_schedule = pack(producers);
-
+      // 设置21个超级节点
       if( set_proposed_producers( packed_schedule.data(),  packed_schedule.size() ) >= 0 ) {
          _gstate.last_producer_schedule_size = static_cast<decltype(_gstate.last_producer_schedule_size)>( top_producers.size() );
       }
@@ -124,8 +129,8 @@ namespace eosiosystem {
     *  If voting for a proxy, the producer votes will not change until the proxy updates their own vote.
     */
    void system_contract::voteproducer( const account_name voter_name, const account_name proxy, const std::vector<account_name>& producers ) {
-      require_auth( voter_name );
-      update_votes( voter_name, proxy, producers, true );
+      require_auth( voter_name );// 判断voter_name是否具有投票权限
+      update_votes( voter_name, proxy, producers, true );   // 更新投票信息
    }
 
    void system_contract::update_votes( const account_name voter_name, const account_name proxy, const std::vector<account_name>& producers, bool voting ) {
@@ -133,11 +138,11 @@ namespace eosiosystem {
       if ( proxy ) {
          eosio_assert( producers.size() == 0, "cannot vote for producers and proxy at same time" );
          eosio_assert( voter_name != proxy, "cannot proxy to self" );
-         require_recipient( proxy );
+         require_recipient( proxy ); // 判断是否具有代理人权限
       } else {
          eosio_assert( producers.size() <= 30, "attempt to vote for too many producers" );
          for( size_t i = 1; i < producers.size(); ++i ) {
-            eosio_assert( producers[i-1] < producers[i], "producer votes must be unique and sorted" );
+            eosio_assert( producers[i-1] < producers[i], "producer votes must be unique and sorted" );// 排序工作在cleos的vote_producers_subcommand中已经完成
          }
       }
 

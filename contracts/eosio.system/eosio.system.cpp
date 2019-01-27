@@ -1,4 +1,4 @@
-#include "eosio.system.hpp"
+#include <eosio.system.hpp>
 #include <eosiolib/dispatcher.hpp>
 
 #include "producer_pay.cpp"

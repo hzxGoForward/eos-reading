@@ -1088,7 +1088,7 @@ struct vote_producers_subcommand {
       add_standard_transaction_options(vote_producers, "voter@active");
 
       vote_producers->set_callback([this] {
-
+         // 对投票人按照名称顺序排序
          std::sort( producer_names.begin(), producer_names.end() );
 
          fc::variant act_payload = fc::mutable_variant_object()
@@ -1096,6 +1096,8 @@ struct vote_producers_subcommand {
                   ("proxy", "")
                   ("producers", producer_names);
          auto accountPermissions = get_account_permissions(tx_permission, {voter_str,config::active_name});
+         // 发送send_actions,将参数发送至系统合约(eosio.system)中,捕获执行结果病返回给用户
+         // voteproducer表示eosio.system中voteproducer执行该函数,act_payload是传递的参数
          send_actions({create_action(accountPermissions, config::system_account_name, N(voteproducer), act_payload)});
       });
    }

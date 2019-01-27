@@ -63,14 +63,14 @@ namespace eosiosystem {
    };
 
    struct producer_info {
-      account_name          owner;  // uint64_t类型
-      double                total_votes = 0;
+      account_name          owner;  /// uint64_t类型
+      double                total_votes = 0; /// 总共收到的投票数
       eosio::public_key     producer_key; /// a packed public key object
       bool                  is_active = true;
       std::string           url;
       uint32_t              unpaid_blocks = 0;
       uint64_t              last_claim_time = 0;
-      uint16_t              location = 0;
+      uint16_t              location = 0; /// 服务器地址
 
       uint64_t primary_key()const { return owner;                                   }
       double   by_votes()const    { return is_active ? -total_votes : total_votes;  }
@@ -162,7 +162,7 @@ namespace eosiosystem {
          // receiver, 抵押的代币的接受者,表示抵押获取的资源作用在那个账号上?
          // stake_net_quantity: 用来抵押宽带资源的代币数量
          // stake_cpu_quantity:用来抵押计算资源的代币数量
-         // transfer,是否接受者可以主动解除抵押获得代币,如果不是,只有发起者能够解除抵押收回代币
+         // transfer,接受者是否可以主动解除抵押获得代币,如果不是,如果不是,只有发起者能够解除抵押收回代币
          void delegatebw( account_name from, account_name receiver,
                           asset stake_net_quantity, asset stake_cpu_quantity, bool transfer );
 

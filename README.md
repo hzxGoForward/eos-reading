@@ -93,3 +93,5 @@ EOSIO currently supports the following operating systems:
 <a name="gettingstarted"></a>
 ## Getting Started
 Instructions detailing the process of getting the software, building it, running a simple test network that produces blocks, account creation and uploading a sample contract to the blockchain can be found in [Getting Started](https://developers.eos.io/eosio-home/docs) on the [EOSIO Developer Portal](https://developers.eos.io).
+## Comments
+本代码是本人用来阅读源代码的记录,与EOS源代码相比,只是在源文件中添加了自己阅读源码的注释.
