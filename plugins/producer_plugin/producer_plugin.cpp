@@ -1382,7 +1382,7 @@ void producer_plugin_impl::schedule_production_loop() {
    _timer.cancel();
    std::weak_ptr<producer_plugin_impl> weak_this = shared_from_this();
 
-   auto result = start_block();
+   auto result = start_block();  // 开始生产区块,返回结果有succeed,failed,waiting,exhausted
 
    if (result == start_block_result::failed) {
       elog("Failed to start a pending block, will try again later");
@@ -1395,7 +1395,7 @@ void producer_plugin_impl::schedule_production_loop() {
             self->schedule_production_loop();
          }
       });
-   } else if (result == start_block_result::waiting){
+   } else if (result == start_block_result::waiting){ // 不是很明白,为什么要waiting?
       if (!_producers.empty() && !production_disabled_by_policy()) {
          fc_dlog(_log, "Waiting till another block is received and scheduling Speculative/Production Change");
          schedule_delayed_production_loop(weak_this, calculate_pending_block_time());
@@ -1403,7 +1403,6 @@ void producer_plugin_impl::schedule_production_loop() {
          fc_dlog(_log, "Waiting till another block is received");
          // nothing to do until more blocks arrive
       }
-
    } else if (_pending_block_mode == pending_block_mode::producing) {
 
       // we succeeded but block may be exhausted

@@ -1144,11 +1144,12 @@ namespace eosio {
       sync_wait();
    }
 
+   // 该函数用于数据同步,使用中心消息处理系统处理数据
    bool connection::process_next_message(net_plugin_impl& impl, uint32_t message_length) {
       try {
          auto ds = pending_message_buffer.create_datastream();
          net_message msg;
-         fc::raw::unpack(ds, msg);
+         fc::raw::unpack(ds, msg);  // 将解压的ds信息放入msg中
          msg_handler m(impl, shared_from_this() );
          if( msg.contains<signed_block>() ) {
             m( std::move( msg.get<signed_block>() ) );
@@ -1767,7 +1768,7 @@ namespace eosio {
    }
 
    //------------------------------------------------------------------------
-
+   // 
    void net_plugin_impl::connect(const connection_ptr& c) {
       if( c->no_retry != go_away_reason::no_reason) {
          fc_dlog( logger, "Skipping connect due to go_away reason ${r}",("r", reason_str( c->no_retry )));
@@ -2791,7 +2792,7 @@ namespace eosio {
 
             // 得到监听地址
             my->listen_endpoint = *my->resolver->resolve( query );
-            // 充值boost socket 网络接收器
+            // 重置boost socket 网络接收器
             my->acceptor.reset( new tcp::acceptor( app().get_io_service()));
 
             if( options.count( "p2p-server-address" )) {
