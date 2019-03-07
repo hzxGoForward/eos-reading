@@ -193,7 +193,8 @@ eosio::client::http::http_context context;
 void add_standard_transaction_options(CLI::App* cmd, string default_permission = "") {
    CLI::callback_t parse_expiration = [](CLI::results_t res) -> bool {
       double value_s;
-      if (res.size() == 0 || !CLI::detail::lexical_cast(res[0], value_s)) {
+      // if (res.size() == 0 || !CLI::detail::lexical_cast(res[0], value_s)) {
+      if (res.empty() || !CLI::detail::lexical_cast(res[0], value_s)) { // change size() == 0 to empty()
          return false;
       }
 
@@ -2610,7 +2611,8 @@ int main( int argc, char** argv ) {
 
    add_standard_transaction_options(transfer, "sender@active");
    transfer->set_callback([&] {
-      if (tx_force_unique && memo.size() == 0) {
+      //if (tx_force_unique && memo.size() == 0) {
+     if (tx_force_unique && memo.empty()) { // 
          // use the memo to add a nonce
          memo = generate_nonce_string();
          tx_force_unique = false;
@@ -2730,7 +2732,8 @@ int main( int argc, char** argv ) {
    importWallet->add_option("-n,--name", wallet_name, localized("The name of the wallet to import key into"));
    importWallet->add_option("--private-key", wallet_key_str, localized("Private key in WIF format to import"));
    importWallet->set_callback([&wallet_name, &wallet_key_str] {
-      if( wallet_key_str.size() == 0 ) {
+      // if( wallet_key_str.size() == 0 ) {
+      if( wallet_key_str.empty() ) {
          std::cout << localized("private key: ");
          fc::set_console_echo(false);
          std::getline( std::cin, wallet_key_str, '\n' );
@@ -2835,7 +2838,8 @@ int main( int argc, char** argv ) {
 
       fc::optional<chain_id_type> chain_id;
 
-      if( str_chain_id.size() == 0 ) {
+      // if( str_chain_id.size() == 0 ) {
+     if( str_chain_id.empty() ) {
          ilog( "grabbing chain_id from nodeos" );
          auto info = get_info();
          chain_id = info.chain_id;
@@ -2843,7 +2847,8 @@ int main( int argc, char** argv ) {
          chain_id = chain_id_type(str_chain_id);
       }
 
-      if( str_private_key.size() == 0 ) {
+      //if( str_private_key.size() == 0 ) {
+     if( str_private_key.empty() ) {
          std::cerr << localized("private key: ");
          fc::set_console_echo(false);
          std::getline( std::cin, str_private_key, '\n' );
@@ -2942,7 +2947,8 @@ int main( int argc, char** argv ) {
    unsigned int proposal_expiration_hours = 24;
    CLI::callback_t parse_expiration_hours = [&](CLI::results_t res) -> bool {
       unsigned int value_s;
-      if (res.size() == 0 || !CLI::detail::lexical_cast(res[0], value_s)) {
+      // if (res.size() == 0 || !CLI::detail::lexical_cast(res[0], value_s)) {
+     if (res.empty() || !CLI::detail::lexical_cast(res[0], value_s)) {  // change size() == 0 to empty()
          return false;
       }
 
