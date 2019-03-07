@@ -278,7 +278,8 @@ chain::action generate_nonce_action() {
 }
 
 void prompt_for_wallet_password(string& pw, const string& name) {
-   if(pw.size() == 0 && name != "SecureEnclave") {
+   // if(pw.size() == 0 && name != "SecureEnclave") { 
+  if(pw.empty() && name != "SecureEnclave") { // change size() == 0 to empty()
       std::cout << localized("password: ");
       fc::set_console_echo(false);
       std::getline( std::cin, pw, '\n' );
@@ -306,7 +307,8 @@ void sign_transaction(signed_transaction& trx, fc::variant& required_keys, const
 fc::variant push_transaction( signed_transaction& trx, int32_t extra_kcpu = 1000, packed_transaction::compression_type compression = packed_transaction::none ) {
    auto info = get_info();
 
-   if (trx.signatures.size() == 0) { // #5445 can't change txn content if already signed
+   // if (trx.signatures.size() == 0) { // #5445 can't change txn content if already signed
+      if (trx.signatures.empty()){ // change size() == 0 to empty()
       trx.expiration = info.head_block_time + tx_expiration;
 
       // Set tapos, default to last irreversible block if it's not specified by the user
@@ -2612,7 +2614,7 @@ int main( int argc, char** argv ) {
    add_standard_transaction_options(transfer, "sender@active");
    transfer->set_callback([&] {
       //if (tx_force_unique && memo.size() == 0) {
-     if (tx_force_unique && memo.empty()) { // 
+     if (tx_force_unique && memo.empty()) { // change size() == 0 to empty() 
          // use the memo to add a nonce
          memo = generate_nonce_string();
          tx_force_unique = false;
@@ -2733,7 +2735,7 @@ int main( int argc, char** argv ) {
    importWallet->add_option("--private-key", wallet_key_str, localized("Private key in WIF format to import"));
    importWallet->set_callback([&wallet_name, &wallet_key_str] {
       // if( wallet_key_str.size() == 0 ) {
-      if( wallet_key_str.empty() ) {
+      if( wallet_key_str.empty() ) {// change size() == 0 to empty()
          std::cout << localized("private key: ");
          fc::set_console_echo(false);
          std::getline( std::cin, wallet_key_str, '\n' );
@@ -2839,7 +2841,7 @@ int main( int argc, char** argv ) {
       fc::optional<chain_id_type> chain_id;
 
       // if( str_chain_id.size() == 0 ) {
-     if( str_chain_id.empty() ) {
+     if( str_chain_id.empty() ) {// change size() == 0 to empty()
          ilog( "grabbing chain_id from nodeos" );
          auto info = get_info();
          chain_id = info.chain_id;
@@ -2848,7 +2850,7 @@ int main( int argc, char** argv ) {
       }
 
       //if( str_private_key.size() == 0 ) {
-     if( str_private_key.empty() ) {
+     if( str_private_key.empty() ) { // change size() == 0 to empty()
          std::cerr << localized("private key: ");
          fc::set_console_echo(false);
          std::getline( std::cin, str_private_key, '\n' );
