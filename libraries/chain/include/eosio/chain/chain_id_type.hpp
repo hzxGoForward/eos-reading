@@ -19,6 +19,7 @@ namespace eosio {
 
 namespace chain {
 
+   // chain_id_type的类型
    struct chain_id_type : public fc::sha256 {
       using fc::sha256::sha256;
 

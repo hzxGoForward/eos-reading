@@ -1267,18 +1267,21 @@ struct controller_impl {
    } FC_CAPTURE_AND_RETHROW() } /// apply_block
 
    std::future<block_state_ptr> create_block_state_future( const signed_block_ptr& b ) {
+      // 不能是空的区块
       EOS_ASSERT( b, block_validate_exception, "null block" );
 
       auto id = b->id();
 
-      // no reason for a block_state if fork_db already knows about block
+      // 如果存在区块,终止并提示
       auto existing = fork_db.get_block( id );
       EOS_ASSERT( !existing, fork_database_exception, "we already know about this block: ${id}", ("id", id) );
 
+      // 获得前一个区块,不存在则报错
       auto prev = fork_db.get_block( b->previous );
       EOS_ASSERT( prev, unlinkable_block_exception, "unlinkable block ${id}", ("id", id)("previous", b->previous) );
 
-      return async_thread_pool( thread_pool, [b, prev]() {
+      // 异步线程池async_thread_pool。传入task，由当前同步的待验证区块以及前一个区块组成，返回的是block_state对象。
+      return async_thread_pool( thread_pool, [b, prev]() {// 传入具体task到异步线程池
          const bool skip_validate_signee = false;
          return std::make_shared<block_state>( *prev, move( b ), skip_validate_signee );
       } );

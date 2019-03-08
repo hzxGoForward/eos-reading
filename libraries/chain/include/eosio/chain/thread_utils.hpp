@@ -15,7 +15,7 @@ namespace eosio { namespace chain {
    template<typename F>
    auto async_thread_pool( boost::asio::thread_pool& thread_pool, F&& f ) {
       auto task = std::make_shared<std::packaged_task<decltype( f() )()>>( std::forward<F>( f ) );
-      boost::asio::post( thread_pool, [task]() { (*task)(); } );
+      boost::asio::post( thread_pool, [task]() { (*task)(); } );// 将任务上传到线程池，通过boost::asio库异步分配线程并行处理。
       return task->get_future();
    }
 

@@ -16,6 +16,7 @@ namespace eosio { namespace chain {
    * and an interval in milliseconds and computes the number of slots.
    **/
    template<uint16_t IntervalMs, uint64_t EpochMs>
+   // 区块链时间戳,只有一个uint32_t类型的public变量-slot, _t表示typedf定义的类型
    class block_timestamp {
       public:
          explicit block_timestamp( uint32_t s=0 ) :slot(s){}

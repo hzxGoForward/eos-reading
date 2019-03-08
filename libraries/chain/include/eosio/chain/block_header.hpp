@@ -28,10 +28,10 @@ namespace eosio { namespace chain {
 
       /** The producer schedule version that should validate this block, this is used to
        * indicate that the prior block which included new_producers->version has been marked
-       * irreversible and that it the new producer schedule takes effect this block.
+       * irreversible and the new producer schedule takes effect this block.
        */
       uint32_t                          schedule_version = 0;
-      optional<producer_schedule_type>  new_producers;
+      optional<producer_schedule_type>  new_producers;   // 本次生产区块的21个超级节点
       extensions_type                   header_extensions;
 
 
@@ -44,7 +44,7 @@ namespace eosio { namespace chain {
 
    struct signed_block_header : public block_header
    {
-      signature_type    producer_signature;
+      signature_type    producer_signature;// 区块生产者的签名
    };
 
    struct header_confirmation {

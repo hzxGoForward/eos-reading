@@ -193,8 +193,8 @@ eosio::client::http::http_context context;
 void add_standard_transaction_options(CLI::App* cmd, string default_permission = "") {
    CLI::callback_t parse_expiration = [](CLI::results_t res) -> bool {
       double value_s;
-      // if (res.size() == 0 || !CLI::detail::lexical_cast(res[0], value_s)) {
-      if (res.empty() || !CLI::detail::lexical_cast(res[0], value_s)) { // change size() == 0 to empty()
+      
+      if (res.size() == 0 || !CLI::detail::lexical_cast(res[0], value_s)) {
          return false;
       }
 
@@ -241,9 +241,7 @@ vector<chain::permission_level> get_account_permissions(const vector<string>& pe
 }
 
 template<typename T>
-fc::variant call( const std::string& url,
-                  const std::string& path,
-                  const T& v ) {
+fc::variant call( const std::string& url, const std::string& path, const T& v ) {
    try {
       auto sp = std::make_unique<eosio::client::http::connection_param>(context, parse_url(url) + path, no_verify ? false : true, headers);
       return eosio::client::http::do_http_call(*sp, fc::variant(v), print_request, print_response );
@@ -258,12 +256,14 @@ fc::variant call( const std::string& url,
 }
 
 template<typename T>
-fc::variant call( const std::string& path,
-                  const T& v ) { return call( url, path, fc::variant(v) ); }
+fc::variant call( const std::string& path, const T& v ) {
+    return call( url, path, fc::variant(v) );
+   }
 
 template<>
-fc::variant call( const std::string& url,
-                  const std::string& path) { return call( url, path, fc::variant() ); }
+fc::variant call( const std::string& url, const std::string& path) {
+    return call( url, path, fc::variant() );
+   }
 
 eosio::chain_apis::read_only::get_info_results get_info() {
    return call(url, get_info_func).as<eosio::chain_apis::read_only::get_info_results>();
@@ -278,8 +278,7 @@ chain::action generate_nonce_action() {
 }
 
 void prompt_for_wallet_password(string& pw, const string& name) {
-   // if(pw.size() == 0 && name != "SecureEnclave") { 
-  if(pw.empty() && name != "SecureEnclave") { // change size() == 0 to empty()
+   if(pw.size() == 0 && name != "SecureEnclave") {
       std::cout << localized("password: ");
       fc::set_console_echo(false);
       std::getline( std::cin, pw, '\n' );
@@ -307,14 +306,21 @@ void sign_transaction(signed_transaction& trx, fc::variant& required_keys, const
 fc::variant push_transaction( signed_transaction& trx, int32_t extra_kcpu = 1000, packed_transaction::compression_type compression = packed_transaction::none ) {
    auto info = get_info();
 
-   // if (trx.signatures.size() == 0) { // #5445 can't change txn content if already signed
-      if (trx.signatures.empty()){ // change size() == 0 to empty()
+   // 如果trx的signatures.size()不为0，说明该交易已经被签名，此时无法修改交易内容
+   // 因此只有trx还未签名时才能修改交易内容, 为什么不用empty()来代替.size()==0呢？ main函数中的8个地方为什么这样写？
+   if (trx.signatures.size() == 0) { // #5445 can't change txn content if already signed
       trx.expiration = info.head_block_time + tx_expiration;
 
       // Set tapos, default to last irreversible block if it's not specified by the user
       block_id_type ref_block_id = info.last_irreversible_block_id;
       try {
          fc::variant ref_block;
+         // 如果与交易相关的区块的num或者id为空，则进行http链接，链接成功后返回ref_block，并获取ref_block_id
+         // EOS.io软件要求每个交易都包括最近的区块头的哈希。这个哈希有两个目的
+         /* 1.防止分叉区块链上出现大量交易记录; 2.使得系统能感知到用户是否在分叉出来的区块链上
+         *  随着时间的推移，所有用户最终直接确认块链，这使得难以伪造假冒链，
+         *  因为假冒将无法从合法链路迁移交易。
+         */
          if (!tx_ref_block_num_or_id.empty()) {
             ref_block = call(get_block_func, fc::mutable_variant_object("block_num_or_id", tx_ref_block_num_or_id));
             ref_block_id = ref_block["id"].as<block_id_type>();
@@ -331,17 +337,21 @@ fc::variant push_transaction( signed_transaction& trx, int32_t extra_kcpu = 1000
       trx.delay_sec = delaysec;
    }
 
+   // 如果交易需要签名，则请求签名，生成signed_transaction
    if (!tx_skip_sign) {
       auto required_keys = determine_required_keys(trx);
       sign_transaction(trx, required_keys, info.chain_id);
    }
 
+   // 如果该交易还未广播，则进行打包之后广播
    if (!tx_dont_broadcast) {
       return call(push_txn_func, packed_transaction(trx, compression));
    } else {
+      // 如果已经打包并且广播，则直接返回
       if (!tx_return_packed) {
         return fc::variant(trx);
       } else {
+         // 否则返回打包后的交易
         return fc::variant(packed_transaction(trx, compression));
       }
    }
@@ -2613,8 +2623,7 @@ int main( int argc, char** argv ) {
 
    add_standard_transaction_options(transfer, "sender@active");
    transfer->set_callback([&] {
-      //if (tx_force_unique && memo.size() == 0) {
-     if (tx_force_unique && memo.empty()) { // change size() == 0 to empty() 
+      if (tx_force_unique && memo.size() == 0) {
          // use the memo to add a nonce
          memo = generate_nonce_string();
          tx_force_unique = false;
@@ -2734,8 +2743,7 @@ int main( int argc, char** argv ) {
    importWallet->add_option("-n,--name", wallet_name, localized("The name of the wallet to import key into"));
    importWallet->add_option("--private-key", wallet_key_str, localized("Private key in WIF format to import"));
    importWallet->set_callback([&wallet_name, &wallet_key_str] {
-      // if( wallet_key_str.size() == 0 ) {
-      if( wallet_key_str.empty() ) {// change size() == 0 to empty()
+      if( wallet_key_str.size() == 0 ) {
          std::cout << localized("private key: ");
          fc::set_console_echo(false);
          std::getline( std::cin, wallet_key_str, '\n' );
@@ -2840,8 +2848,7 @@ int main( int argc, char** argv ) {
 
       fc::optional<chain_id_type> chain_id;
 
-      // if( str_chain_id.size() == 0 ) {
-     if( str_chain_id.empty() ) {// change size() == 0 to empty()
+      if( str_chain_id.size() == 0 ) {
          ilog( "grabbing chain_id from nodeos" );
          auto info = get_info();
          chain_id = info.chain_id;
@@ -2849,8 +2856,7 @@ int main( int argc, char** argv ) {
          chain_id = chain_id_type(str_chain_id);
       }
 
-      //if( str_private_key.size() == 0 ) {
-     if( str_private_key.empty() ) { // change size() == 0 to empty()
+      if( str_private_key.size() == 0 ) {
          std::cerr << localized("private key: ");
          fc::set_console_echo(false);
          std::getline( std::cin, str_private_key, '\n' );
@@ -2949,8 +2955,7 @@ int main( int argc, char** argv ) {
    unsigned int proposal_expiration_hours = 24;
    CLI::callback_t parse_expiration_hours = [&](CLI::results_t res) -> bool {
       unsigned int value_s;
-      // if (res.size() == 0 || !CLI::detail::lexical_cast(res[0], value_s)) {
-     if (res.empty() || !CLI::detail::lexical_cast(res[0], value_s)) {  // change size() == 0 to empty()
+      if (res.size() == 0 || !CLI::detail::lexical_cast(res[0], value_s)) {
          return false;
       }
 

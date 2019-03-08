@@ -9,6 +9,7 @@ namespace eosio { namespace chain {
  *  @struct block_header_state
  *  @brief defines the minimum state necessary to validate transaction headers
  */
+// 区块头状态
 struct block_header_state {
     block_id_type                     id;
     uint32_t                          block_num = 0;

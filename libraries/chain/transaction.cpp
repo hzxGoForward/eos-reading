@@ -71,6 +71,7 @@ transaction_id_type transaction::id() const {
    return enc.result();
 }
 
+// 根据区块id和cfd获得digest
 digest_type transaction::sig_digest( const chain_id_type& chain_id, const vector<bytes>& cfd )const {
    digest_type::encoder enc;
    fc::raw::pack( enc, chain_id );
@@ -83,6 +84,9 @@ digest_type transaction::sig_digest( const chain_id_type& chain_id, const vector
    return enc.result();
 }
 
+// 从签名中提取公钥, 结果存储在recovered_pub_keys中
+// 最终这个函数内部保存了 recovery_cache的多索引容器,里面包含了数据结构 cached_pub_key,最多包含10000个
+// 猜测这个功能是从外部收到交易之后将交易信息保存在本地
 fc::microseconds transaction::get_signature_keys( const vector<signature_type>& signatures,
       const chain_id_type& chain_id, fc::time_point deadline, const vector<bytes>& cfd,
       flat_set<public_key_type>& recovered_pub_keys, bool allow_duplicate_keys)const
@@ -90,26 +94,32 @@ fc::microseconds transaction::get_signature_keys( const vector<signature_type>& 
    using boost::adaptors::transformed;
 
    constexpr size_t recovery_cache_size = 10000;
-   static recovery_cache_type recovery_cache;
+   static recovery_cache_type recovery_cache;// 保存cached_pub_key 的多索引容器
    static std::mutex cache_mtx;
 
    auto start = fc::time_point::now();
    recovered_pub_keys.clear();
-   const digest_type digest = sig_digest(chain_id, cfd);
+   const digest_type digest = sig_digest(chain_id, cfd);// 获得digest
 
    std::unique_lock<std::mutex> lock(cache_mtx, std::defer_lock);
    fc::microseconds sig_cpu_usage;
+   
+   // 遍历交易中所有的签名
    for(const signature_type& sig : signatures) {
       auto now = fc::time_point::now();
       EOS_ASSERT( now < deadline, tx_cpu_usage_exceeded, "transaction signature verification executed for too long",
                   ("now", now)("deadline", deadline)("start", start) );
       public_key_type recov;
-      const auto& tid = id();
+
+      const auto& tid = id();  // 返回交易的id, 类型为fc::sha256;
       lock.lock();
+
+      // 根据签名在cache中寻找公钥的迭代器位置
       recovery_cache_type::index<by_sig>::type::iterator it = recovery_cache.get<by_sig>().find( sig );
+      // 未找到签名或者找到签名,但是签名的交易id不是本次交易的id
       if( it == recovery_cache.get<by_sig>().end() || it->trx_id != tid ) {
          lock.unlock();
-         recov = public_key_type( sig, digest );
+         recov = public_key_type( sig, digest );// 通过签名和摘要(digest)可以获取公钥
          fc::microseconds cpu_usage = fc::time_point::now() - start;
          lock.lock();
          recovery_cache.emplace_back( cached_pub_key{tid, recov, sig, cpu_usage} ); //could fail on dup signatures; not a problem
@@ -135,6 +145,7 @@ fc::microseconds transaction::get_signature_keys( const vector<signature_type>& 
 } FC_CAPTURE_AND_RETHROW() }
 
 
+// 用私钥进行签名
 const signature_type& signed_transaction::sign(const private_key_type& key, const chain_id_type& chain_id) {
    signatures.push_back(key.sign(sig_digest(chain_id, context_free_data)));
    return signatures.back();

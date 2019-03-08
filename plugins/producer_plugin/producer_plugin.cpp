@@ -87,7 +87,7 @@ using transaction_id_with_expiry_index = multi_index_container<
 
 enum class pending_block_mode {
    producing,
-   speculating
+   speculating    // 投机\思索\猜测\推测
 };
 #define CATCH_AND_CALL(NEXT)\
    catch ( const fc::exception& err ) {\
@@ -135,7 +135,9 @@ class producer_plugin_impl : public std::enable_shared_from_this<producer_plugin
 
       int32_t                                                   _max_transaction_time_ms;
       fc::microseconds                                          _max_irreversible_block_age_us;
+      // 非最后一个区块产生时间的偏移量，按微秒计算。负值会导致块更早出去，正值会导致块更晚出去。
       int32_t                                                   _produce_time_offset_us = 0;
+      // 最后一个区块产生时间的偏移量，按微秒计算。负值会导致块更早出去，正值会导致块更晚出去。
       int32_t                                                   _last_block_time_offset_us = 0;
       int32_t                                                   _max_scheduled_transaction_time_per_block_ms;
       fc::time_point                                            _irreversible_block_time;
@@ -286,33 +288,36 @@ class producer_plugin_impl : public std::enable_shared_from_this<producer_plugin
             throw fce;
          }
       };
-
+      /**
+       * 处理incoming接收到的区块。
+       * @param block 已签名区块
+       */
       void on_incoming_block(const signed_block_ptr& block) {
          auto id = block->id();
 
          fc_dlog(_log, "received incoming block ${id}", ("id", id));
-
+         // 判断区块时间是否合适,区块时间戳不应该超过当前时间的7秒
          EOS_ASSERT( block->timestamp < (fc::time_point::now() + fc::seconds( 7 )), block_from_the_future,
                      "received a block from the future, ignoring it: ${id}", ("id", id) );
-
+         // 获取区块链控制器
          chain::controller& chain = chain_plug->chain();
 
-         /* de-dupe here... no point in aborting block if we already know the block */
+         /* 如果区块在本地已经存在,直接返回*/
          auto existing = chain.fetch_block_by_id( id );
          if( existing ) { return; }
 
-         // start processing of block
+         // 开始验证该区块,返回结果是指向block_state的指针
          auto bsf = chain.create_block_state_future( block );
 
-         // abort the pending block
+         // 丢弃pending block,可能是删除本地已经生产的区块,因为有新的区块到来,本地生产的区块失效了
          chain.abort_block();
 
-         // exceptions throw out, make sure we restart our loop
+         // 抛出异常时保证重启循环
          auto ensure = fc::make_scoped_exit([this](){
             schedule_production_loop();
          });
 
-         // push the new block
+         // 向本地链添加新区块
          bool except = false;
          try {
             chain.push_block( bsf );
@@ -329,24 +334,41 @@ class producer_plugin_impl : public std::enable_shared_from_this<producer_plugin
 
          if( except ) {
             app().get_channel<channels::rejected_block>().publish( block );
+            // rejected_block频道发布某区块已被拒绝的消息，该频道已在bnet插件被订阅，当消息发布，bnet插件会调用函数on_bad_block处理被拒区块。
             return;
          }
 
+         // 最后一个区块的时间戳下一个时间点大于等于当前时间,表示区块已经同步完毕,本地节点可以继续生产区块
          if( chain.head_block_state()->header.timestamp.next().to_time_point() >= fc::time_point::now() ) {
             _production_enabled = true;
          }
 
-
+         //区块时间点已流逝的时间在5分钟之内的情况，或者区块号是整千时。输出日志模板并替换变量的值。
          if( fc::time_point::now() - block->timestamp < fc::minutes(5) || (block->block_num() % 1000 == 0) ) {
+            // p是生产者，
+            // id是区块id截取中间的8到16位输出，
+            // n是区块号，t是区块时间，
+            // count是区块中事务的数量，
+            // lib是链最后一个不可逆区块号，
+            // confs是区块的确认数
             ilog("Received block ${id}... #${n} @ ${t} signed by ${p} [trxs: ${count}, lib: ${lib}, conf: ${confs}, latency: ${latency} ms]",
-                 ("p",block->producer)("id",fc::variant(block->id()).as_string().substr(8,16))
-                 ("n",block_header::num_from_id(block->id()))("t",block->timestamp)
-                 ("count",block->transactions.size())("lib",chain.last_irreversible_block_num())("confs", block->confirmed)("latency", (fc::time_point::now() - block->timestamp).count()/1000 ) );
+                  ("p",block->producer)("id",fc::variant(block->id()).as_string().substr(8,16))
+                  ("n",block_header::num_from_id(block->id()))("t",block->timestamp)
+                  ("count",block->transactions.size())("lib",chain.last_irreversible_block_num())("confs", block->confirmed)("latency", (fc::time_point::now() - block->timestamp).count()/1000 ) );
+                  // confirmed，是生产者在签名一个区块时向前确认的区块数量，默认是1,则只确认前一个区块。
+                  // latency，潜伏因素的字面含义。值为当前区块时间点已流逝的时间。
+                  // count是时间库中的一个特殊函数，返回某个时间按照某个单位来计数时的字面值，可以用做跨单位的运算。
+                  // block_timestamp_type类型定义了区块链的时间戳的默认间隔是500ms，一个周期是2000年。
          }
       }
 
       std::deque<std::tuple<transaction_metadata_ptr, bool, next_function<transaction_trace_ptr>>> _pending_incoming_transactions;
-
+      /**
+       * 处理接收到的事务的本地同步工作
+       * @param trx 接收的事务，是打包状态的
+       * @param persist_until_expired 标志位：事务是否在过期前被持久化了，bool类型
+       * @param next 回调函数next方法。
+       */
       void on_incoming_transaction_async(const transaction_metadata_ptr& trx, bool persist_until_expired, next_function<transaction_trace_ptr> next) {
          chain::controller& chain = chain_plug->chain();
          const auto& cfg = chain.get_global_properties().configuration;
@@ -362,17 +384,23 @@ class producer_plugin_impl : public std::enable_shared_from_this<producer_plugin
 
       void process_incoming_transaction_async(const transaction_metadata_ptr& trx, bool persist_until_expired, next_function<transaction_trace_ptr> next) {
          chain::controller& chain = chain_plug->chain();
+         /* 
+         * 接收到的事务要打包在本地的pending区块中，如果不存在pending区块，
+         * 说明本地节点未开始生产区块，所以要插入到pending事务集合_pending_incoming_transactions中等待start_block来处理。
+         */
          if (!chain.pending_block_state()) {
             _pending_incoming_transactions.emplace_back(trx, persist_until_expired, next);
             return;
          }
-
+         // 如果本地已经生产了pending区块
          auto block_time = chain.pending_block_state()->header.timestamp.to_time_point();
 
          auto send_response = [this, &trx, &chain, &next](const fc::static_variant<fc::exception_ptr, transaction_trace_ptr>& response) {
             next(response);
             if (response.contains<fc::exception_ptr>()) {
+               // 如果响应中包含异常指针，则发布异常信息以及事务对象到channels::transaction_ack
                _transaction_ack_channel.publish(std::pair<fc::exception_ptr, transaction_metadata_ptr>(response.get<fc::exception_ptr>(), trx));
+               // 如果pending区块的模式为生产中，则打印出对应的debug日志：该事务被区块拒绝
                if (_pending_block_mode == pending_block_mode::producing) {
                   fc_dlog(_trx_trace_log, "[TRX_TRACE] Block ${block_num} for producer ${prod} is REJECTING tx: ${txid} : ${why} ",
                         ("block_num", chain.head_block_num() + 1)
@@ -380,12 +408,16 @@ class producer_plugin_impl : public std::enable_shared_from_this<producer_plugin
                         ("txid", trx->id)
                         ("why",response.get<fc::exception_ptr>()->what()));
                } else {
+                  // 如果pending区块的模式为投机中，则打印出对应的debug日志：投机行为被拒绝。
                   fc_dlog(_trx_trace_log, "[TRX_TRACE] Speculative execution is REJECTING tx: ${txid} : ${why} ",
                           ("txid", trx->id)
                           ("why",response.get<fc::exception_ptr>()->what()));
                }
             } else {
+               // 响应中无异常。发布空异常信息以及事务对象到channels::transaction_ack
                _transaction_ack_channel.publish(std::pair<fc::exception_ptr, transaction_metadata_ptr>(nullptr, trx));
+
+               // 仍旧区分pending区块状态生产中与投机行为的不同日志输出。
                if (_pending_block_mode == pending_block_mode::producing) {
                   fc_dlog(_trx_trace_log, "[TRX_TRACE] Block ${block_num} for producer ${prod} is ACCEPTING tx: ${txid}",
                           ("block_num", chain.head_block_num() + 1)
@@ -462,6 +494,7 @@ class producer_plugin_impl : public std::enable_shared_from_this<producer_plugin
       }
 
       bool production_disabled_by_policy() {
+         // 生产区块过程是否被终止...
          return !_production_enabled || _pause_production || (_max_irreversible_block_age_us.count() >= 0 && get_irreversible_block_age() >= _max_irreversible_block_age_us);
       }
 
@@ -1033,9 +1066,12 @@ fc::time_point producer_plugin_impl::calculate_pending_block_time() const {
    return block_time;
 }
 
+// 以block_time起始,计算区块生产的截止时间
 fc::time_point producer_plugin_impl::calculate_block_deadline( const fc::time_point& block_time ) const {
+   // block_timestamp_type.slot 表示秒数,
    bool last_block = ((block_timestamp_type(block_time).slot % config::producer_repetitions) == config::producer_repetitions - 1);
    return block_time + fc::microseconds(last_block ? _last_block_time_offset_us : _produce_time_offset_us);
+
 }
 
 enum class tx_category {
@@ -1044,7 +1080,7 @@ enum class tx_category {
    EXPIRED,
 };
 
-
+// 尝试打包区块
 producer_plugin_impl::start_block_result producer_plugin_impl::start_block() {
    chain::controller& chain = chain_plug->chain();
 
@@ -1056,25 +1092,25 @@ producer_plugin_impl::start_block_result producer_plugin_impl::start_block() {
    //Schedule for the next second's tick regardless of chain state
    // If we would wait less than 50ms (1/10 of block_interval), wait for the whole block interval.
    const fc::time_point now = fc::time_point::now();
-   const fc::time_point block_time = calculate_pending_block_time();
+   const fc::time_point block_time = calculate_pending_block_time();// 这个函数的含义是什么?
 
    _pending_block_mode = pending_block_mode::producing;
 
    // Not our turn
-   const auto& scheduled_producer = hbs->get_scheduled_producer(block_time);
+   const auto& scheduled_producer = hbs->get_scheduled_producer(block_time);// 获取当前生产者
    auto currrent_watermark_itr = _producer_watermarks.find(scheduled_producer.producer_name);
    auto signature_provider_itr = _signature_providers.find(scheduled_producer.block_signing_key);
    auto irreversible_block_age = get_irreversible_block_age();
 
    // If the next block production opportunity is in the present or future, we're synced.
-   if( !_production_enabled ) {
+   if( !_production_enabled ) {                                                        // 还在同步区块,暂时不能进行生产
       _pending_block_mode = pending_block_mode::speculating;
-   } else if( _producers.find(scheduled_producer.producer_name) == _producers.end()) {
+   } else if( _producers.find(scheduled_producer.producer_name) == _producers.end()) { // 检测当前区块生产者是否属于本节点
       _pending_block_mode = pending_block_mode::speculating;
-   } else if (signature_provider_itr == _signature_providers.end()) {
+   } else if (signature_provider_itr == _signature_providers.end()) {                  // 没有生BP的私钥
       elog("Not producing block because I don't have the private key for ${scheduled_key}", ("scheduled_key", scheduled_producer.block_signing_key));
       _pending_block_mode = pending_block_mode::speculating;
-   } else if ( _pause_production ) {
+   } else if ( _pause_production ) {                                                   // 暂停生产区块
       elog("Not producing block because production is explicitly paused");
       _pending_block_mode = pending_block_mode::speculating;
    } else if ( _max_irreversible_block_age_us.count() >= 0 && irreversible_block_age >= _max_irreversible_block_age_us ) {
@@ -1377,36 +1413,40 @@ producer_plugin_impl::start_block_result producer_plugin_impl::start_block() {
    return start_block_result::failed;
 }
 
+// 控制21个全局节点的生产区块的函数
 void producer_plugin_impl::schedule_production_loop() {
    chain::controller& chain = chain_plug->chain();
-   _timer.cancel();
+   _timer.cancel();                               // _timer 是boost库中asio的一个定时器
    std::weak_ptr<producer_plugin_impl> weak_this = shared_from_this();
 
-   auto result = start_block();  // 开始生产区块,返回结果有succeed,failed,waiting,exhausted
+   auto result = start_block();  // 开始打包一个区块,返回结果有succeed,failed,waiting,exhausted
 
    if (result == start_block_result::failed) {
       elog("Failed to start a pending block, will try again later");
-      _timer.expires_from_now( boost::posix_time::microseconds( config::block_interval_us  / 10 ));
+      _timer.expires_from_now( boost::posix_time::microseconds( config::block_interval_us  / 10 )); // 0.05秒后定时器失效
 
-      // we failed to start a block, so try again later?
+      // 稍后继续尝试启动节点
       _timer.async_wait([weak_this,cid=++_timer_corelation_id](const boost::system::error_code& ec) {
          auto self = weak_this.lock();
          if (self && ec != boost::asio::error::operation_aborted && cid == self->_timer_corelation_id) {
             self->schedule_production_loop();
          }
       });
-   } else if (result == start_block_result::waiting){ // 不是很明白,为什么要waiting?
+   } else if (result == start_block_result::waiting){ // 当前还在同步区块信息,等待中...
+      // waiting的状态有两种情况,要么一轮区块生产完毕,需要等待或者是生产区块受外部命令而停止
       if (!_producers.empty() && !production_disabled_by_policy()) {
          fc_dlog(_log, "Waiting till another block is received and scheduling Speculative/Production Change");
+         // 过会儿再进行区块生产
          schedule_delayed_production_loop(weak_this, calculate_pending_block_time());
       } else {
          fc_dlog(_log, "Waiting till another block is received");
-         // nothing to do until more blocks arrive
+         // 其他区块还没有同步完毕,因此急需等待同步完成才能生产区块
       }
    } else if (_pending_block_mode == pending_block_mode::producing) {
 
-      // we succeeded but block may be exhausted
+      // 成功打包了一个区块,但是有可能超时
       static const boost::posix_time::ptime epoch(boost::gregorian::date(1970, 1, 1));
+      // pending_block_time 返回最后一个区块的时间戳(是刚刚生产的区块的时间戳还是之前有效区块的时间戳,暂时还不清楚)
       auto deadline = calculate_block_deadline(chain.pending_block_time());
 
       if (deadline > fc::time_point::now()) {

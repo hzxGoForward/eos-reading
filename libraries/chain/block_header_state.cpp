@@ -10,9 +10,12 @@ namespace eosio { namespace chain {
    }
 
    producer_key block_header_state::get_scheduled_producer( block_timestamp_type t )const {
-      auto index = t.slot % (active_schedule.producers.size() * config::producer_repetitions);
-      index /= config::producer_repetitions;
-      return active_schedule.producers[index];
+      // producers.size() == 21
+      // producer_repetitions = 12, 每个bp生产12个区块为一次重复
+      
+      auto index = t.slot % (active_schedule.producers.size() * config::producer_repetitions);// 生产的轮数,index从0算起
+      index /= config::producer_repetitions;// 本轮的bp的index
+      return active_schedule.producers[index];// 返回该生产的bp,producer_key中包含producer_name
    }
 
    uint32_t block_header_state::calc_dpos_last_irreversible()const {
