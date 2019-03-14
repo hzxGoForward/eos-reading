@@ -379,6 +379,7 @@ void packed_transaction::local_unpack_context_free_data()
    } FC_CAPTURE_AND_RETHROW( (compression) )
 }
 
+// 在本地打包交易,根据打包类型进行打包
 void packed_transaction::local_pack_transaction()
 {
    try {

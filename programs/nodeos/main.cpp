@@ -88,27 +88,42 @@ enum return_codes {
    NODE_MANAGEMENT_SUCCESS = 5
 };
 
+// 这个相当于eos的服务端,通过添加插件的方式为客户端提供API
+
 int main(int argc, char** argv)
 {
    try {
-      app().set_version(eosio::nodeos::config::version);
+      app().set_version(eosio::nodeos::config::version);// 设置版本号
 
+      // 设置数据文件保存路径
       auto root = fc::app_path();
       app().set_default_data_dir(root / "eosio/nodeos/data" );
+      // 设置配置文件保存路径
       app().set_default_config_dir(root / "eosio/nodeos/config" );
       http_plugin::set_defaults({
          .address_config_prefix = "",
          .default_unix_socket_path = "",
          .default_http_port = 8888
       });
-      if(!app().initialize<chain_plugin, http_plugin, net_plugin, producer_plugin>(argc, argv))
+      // 初始化4种插件,命令行启动后,根据用户输入的命令启动插件,区块链,http,网络以及生产区块的插件
+      // 如果初始化失败,则程序停止运行
+      // http_plugin与cleos交互
+      // producer_plugin生产区块
+      if(!app().initialize<chain_plugin, http_plugin, net_plugin, producer_plugin>(argc, argv))    // application.hpp 77行
          return INITIALIZE_FAIL;
+      
+      // 初始化日志
       initialize_logging();
+      // 记录日志
       ilog("nodeos version ${ver}", ("ver", app().version_string()));
       ilog("eosio root is ${root}", ("root", root.string()));
       ilog("nodeos using configuration file ${c}", ("c", app().full_config_file_path().string()));
       ilog("nodeos data directory is ${d}", ("d", app().data_dir().string()));
-      app().startup();
+      
+      
+      app().startup();//搞这么久,这个才是重点,启动其他相关插件,开始工作
+
+      // 运行
       app().exec();
    } catch( const extract_genesis_state_exception& e ) {
       return EXTRACTED_GENESIS;

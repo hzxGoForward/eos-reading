@@ -179,6 +179,7 @@ namespace eosio { namespace client { namespace http {
       }
    }
 
+// 进行http链接,连接参数,传输的数据,是否打印request和response
    fc::variant do_http_call( const connection_param& cp,
                              const fc::variant& postdata,
                              bool print_request,
@@ -193,6 +194,7 @@ namespace eosio { namespace client { namespace http {
    boost::asio::streambuf request;
    std::ostream request_stream(&request);
    auto host_header_value = format_host_header(url);
+   // 将请求的URL封装成http包
    request_stream << "POST " << url.path << " HTTP/1.0\r\n";
    request_stream << "Host: " << host_header_value << "\r\n";
    request_stream << "content-length: " << postjson.size() << "\r\n";
@@ -219,15 +221,16 @@ namespace eosio { namespace client { namespace http {
    std::string re;
 
    try {
+      // 和服务器建立连接
       if(url.scheme == "unix") {
          boost::asio::local::stream_protocol::socket unix_socket(cp.context->ios);
          unix_socket.connect(boost::asio::local::stream_protocol::endpoint(url.server));
-         re = do_txrx(unix_socket, request, status_code);
+         re = do_txrx(unix_socket, request, status_code);   // 发送http报文并且返回结果
       }
       else if(url.scheme == "http") {
          tcp::socket socket(cp.context->ios);
          do_connect(socket, url);
-         re = do_txrx(socket, request, status_code);
+         re = do_txrx(socket, request, status_code);  // 发送http报文并且返回结果
       }
       else { //https
          boost::asio::ssl::context ssl_context(boost::asio::ssl::context::sslv23_client);

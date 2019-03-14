@@ -240,6 +240,7 @@ vector<chain::permission_level> get_account_permissions(const vector<string>& pe
       return get_account_permissions(tx_permission);
 }
 
+// 进行http链接服务器,发送交易
 template<typename T>
 fc::variant call( const std::string& url, const std::string& path, const T& v ) {
    try {
@@ -255,6 +256,8 @@ fc::variant call( const std::string& url, const std::string& path, const T& v ) 
    }
 }
 
+
+// push_transaction中函数调用的实call函数
 template<typename T>
 fc::variant call( const std::string& path, const T& v ) {
     return call( url, path, fc::variant(v) );
@@ -304,9 +307,10 @@ void sign_transaction(signed_transaction& trx, fc::variant& required_keys, const
    trx = signed_trx.as<signed_transaction>();
 }
 
+
+// push_transaction: 发送url地址到服务器端
 fc::variant push_transaction( signed_transaction& trx, int32_t extra_kcpu = 1000, packed_transaction::compression_type compression = packed_transaction::none ) {
    auto info = get_info();
-
    // 如果trx的signatures.size()不为0，说明该交易已经被签名，此时无法修改交易内容
    // 因此只有trx还未签名时才能修改交易内容, 为什么不用empty()来代替.size()==0呢？ main函数中的8个地方为什么这样写？
    if (trx.signatures.size() == 0) { // #5445 can't change txn content if already signed
@@ -323,6 +327,7 @@ fc::variant push_transaction( signed_transaction& trx, int32_t extra_kcpu = 1000
          *  因为假冒将无法从合法链路迁移交易。
          */
          if (!tx_ref_block_num_or_id.empty()) {
+            // 跟服务器请求最近的区块引用
             ref_block = call(get_block_func, fc::mutable_variant_object("block_num_or_id", tx_ref_block_num_or_id));
             ref_block_id = ref_block["id"].as<block_id_type>();
          }
@@ -330,12 +335,13 @@ fc::variant push_transaction( signed_transaction& trx, int32_t extra_kcpu = 1000
       trx.set_reference_block(ref_block_id);
 
       if (tx_force_unique) {
+         // 使得该交易唯一，这会消耗额外的宽带资源，同时移除了意外情况下该交易会被发布多次的其他保护措施。
          trx.context_free_actions.emplace_back( generate_nonce_action() );
       }
 
       trx.max_cpu_usage_ms = tx_max_cpu_usage;
       trx.max_net_usage_words = (tx_max_net_usage + 7)/8;
-      trx.delay_sec = delaysec;
+      trx.delay_sec = delaysec;// delay_sec =0 delay_sec之后发布交易，在此期间可以撤回此交易
    }
 
    // 如果交易需要签名，则请求签名，生成signed_transaction
@@ -344,11 +350,12 @@ fc::variant push_transaction( signed_transaction& trx, int32_t extra_kcpu = 1000
       sign_transaction(trx, required_keys, info.chain_id);
    }
 
-   // 如果该交易还未广播，则进行打包之后广播
+   // 直接广播该交易,发送至服务器端
    if (!tx_dont_broadcast) {
       return call(push_txn_func, packed_transaction(trx, compression));
-   } else {
-      // 如果已经打包并且广播，则直接返回
+   } 
+   else {
+      // 如果交易没打包则打包
       if (!tx_return_packed) {
         return fc::variant(trx);
       } else {
@@ -358,6 +365,7 @@ fc::variant push_transaction( signed_transaction& trx, int32_t extra_kcpu = 1000
    }
 }
 
+// 执行一个actions 
 fc::variant push_actions(std::vector<chain::action>&& actions, int32_t extra_kcpu, packed_transaction::compression_type compression = packed_transaction::none ) {
    signed_transaction trx;
    trx.actions = std::forward<decltype(actions)>(actions);
@@ -505,6 +513,11 @@ void print_result( const fc::variant& result ) { try {
       }
 } FC_CAPTURE_AND_RETHROW( (result) ) }
 
+
+/**
+ （1）在main函数中，解析transfer命令,通过create_transfer函数将交易发送者、交易接收者、token数量等信息封装成mutable_variant_object对象，
+ （2）调用send_action函数，将交易信息发送到服务器端打包进区块链
+ */
 using std::cout;
 void send_actions(std::vector<chain::action>&& actions, int32_t extra_kcpu = 1000, packed_transaction::compression_type compression = packed_transaction::none ) {
    auto result = push_actions( move(actions), extra_kcpu, compression);
@@ -591,6 +604,7 @@ chain::action create_open(const string& contract, const name& owner, symbol sym,
    };
 }
 
+// 创建一笔交易
 chain::action create_transfer(const string& contract, const name& sender, const name& recipient, asset amount, const string& memo ) {
 
    auto transfer = fc::mutable_variant_object
@@ -1874,6 +1888,8 @@ CLI::callback_t header_opt_callback = [](CLI::results_t res) {
    return true;
 };
 
+// cleos 是""client eos"的缩写,可以理解为访问EOS区块链的客户端;
+
 int main( int argc, char** argv ) {
    setlocale(LC_ALL, "");
    bindtextdomain(locale_domain, locale_path);
@@ -2607,7 +2623,7 @@ int main( int argc, char** argv ) {
    // set action permission
    auto setActionPermission = set_action_permission_subcommand(setAction);
 
-   // Transfer subcommand
+   // Transfer subcommand, add_subcommand 是给命令行增加一个命令。
    string con = "eosio.token";
    string sender;
    string recipient;
@@ -2615,6 +2631,7 @@ int main( int argc, char** argv ) {
    string memo;
    bool pay_ram = false;
    auto transfer = app.add_subcommand("transfer", localized("Transfer tokens from account to account"), false);
+   // add_option则是给每条命令添加参数，->required表示参数是命令行必须输入的,否则命令行中可以忽略
    transfer->add_option("sender", sender, localized("The account sending tokens"))->required();
    transfer->add_option("recipient", recipient, localized("The account receiving tokens"))->required();
    transfer->add_option("amount", amount, localized("The amount of tokens to send"))->required();
@@ -2624,8 +2641,7 @@ int main( int argc, char** argv ) {
 
    add_standard_transaction_options(transfer, "sender@active");
    transfer->set_callback([&] {
-      //if (tx_force_unique && memo.size() == 0) {
-     if (tx_force_unique && memo.empty()) { // change size() == 0 to empty() 
+     if (tx_force_unique && memo.empty()) { 
          // use the memo to add a nonce
          memo = generate_nonce_string();
          tx_force_unique = false;
@@ -3452,6 +3468,7 @@ int main( int argc, char** argv ) {
    auto cancelDelay = canceldelay_subcommand(system);
 
    try {
+      // 通过parse来获取用户的输入，并且调用相关功能
        app.parse(argc, argv);
    } catch (const CLI::ParseError &e) {
        return app.exit(e);

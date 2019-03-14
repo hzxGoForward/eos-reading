@@ -72,7 +72,7 @@ struct async_result_visitor : public fc::visitor<std::string> {
 #define CHAIN_RW_CALL(call_name, http_response_code) CALL(chain, rw_api, chain_apis::read_write, call_name, http_response_code)
 #define CHAIN_RO_CALL_ASYNC(call_name, call_result, http_response_code) CALL_ASYNC(chain, ro_api, chain_apis::read_only, call_name, call_result, http_response_code)
 #define CHAIN_RW_CALL_ASYNC(call_name, call_result, http_response_code) CALL_ASYNC(chain, rw_api, chain_apis::read_write, call_name, call_result, http_response_code)
-
+// chain_api_plugin插件在启动函数中注册了以下URL回调函数，包括查询区块信息、处理交易数据：
 void chain_api_plugin::plugin_startup() {
    ilog( "starting chain_api_plugin" );
    my.reset(new chain_api_plugin_impl(app().get_plugin<chain_plugin>().chain()));

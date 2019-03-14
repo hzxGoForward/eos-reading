@@ -84,7 +84,7 @@ public:
 
    signal<void(const chain::producer_confirmation&)> confirmed_block;
 private:
-   std::shared_ptr<class producer_plugin_impl> my;
+   std::shared_ptr<class producer_plugin_impl> my; // producer_plugin_impl的指针,负责所有任务的执行
 };
 
 } //eosio

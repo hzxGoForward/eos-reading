@@ -128,7 +128,7 @@ namespace eosio {
 
    class http_plugin_impl {
       public:
-         map<string,url_handler>  url_handlers;
+         map<string,url_handler>  url_handlers; // url_handler是一个url和处理函数的键值对map集合,由class http_plugin_impl管理
          optional<tcp::endpoint>  listen_endpoint;
          string                   access_control_allow_origin;
          string                   access_control_allow_headers;
@@ -254,6 +254,7 @@ namespace eosio {
             return true;
          }
 
+         // 处理http请求函数,从中解析出url地址,消息内容\然后再url_handlers中查找url对应的回调函数,最后通过handler_itr->second调用处理函数
          template<class T>
          void handle_http_request(typename websocketpp::server<T>::connection_ptr con) {
             try {
@@ -281,16 +282,19 @@ namespace eosio {
                }
 
                con->append_header( "Content-type", "application/json" );
-               auto body = con->get_request_body();
-               auto resource = con->get_uri()->get_resource();
-               auto handler_itr = url_handlers.find( resource );
+               auto body = con->get_request_body();         // 获取request 的body
+               auto resource = con->get_uri()->get_resource();    // 获取resource,即函数名称
+               auto handler_itr = url_handlers.find( resource );// 在url_hanldlers集合中查找url对应的回调函数
                if( handler_itr != url_handlers.end()) {
-                  con->defer_http_response();
-                  handler_itr->second( resource, body, [con]( auto code, auto&& body ) {
+                  con->defer_http_response();                     // 稍后处理
+                  // 通过handler_itr的second进行处理,这其中又传入了一个lambda函数
+                  handler_itr->second( resource, body, 
+                  [con]( auto code, auto&& body ) {
                      con->set_body( std::move( body ));
                      con->set_status( websocketpp::http::status_code::value( code ));
                      con->send_http_response();
-                  } );
+                     } 
+                     );
 
                } else {
                   dlog( "404 - not found: ${ep}", ("ep", resource));
@@ -403,6 +407,7 @@ namespace eosio {
             ;
    }
 
+   // http plugin插件的初始化工作
    void http_plugin::plugin_initialize(const variables_map& options) {
       try {
          my->validate_host = options.at("http-validate-host").as<bool>();
@@ -477,12 +482,14 @@ namespace eosio {
          //watch out for the returns above when adding new code here
       } FC_LOG_AND_RETHROW()
    }
-
+   // 启动http插件
    void http_plugin::plugin_startup() {
+      
+      // 如果只是一个监听的端点?
       if(my->listen_endpoint) {
          try {
+            // 注册http请求处理函数
             my->create_server_for_endpoint(*my->listen_endpoint, my->server);
-
             ilog("start listening for http requests");
             my->server.listen(*my->listen_endpoint);
             my->server.start_accept();
@@ -498,15 +505,19 @@ namespace eosio {
          }
       }
 
+      // 如果是一个unix端?
       if(my->unix_endpoint) {
          try {
             my->unix_server.clear_access_channels(websocketpp::log::alevel::all);
             my->unix_server.init_asio(&app().get_io_service());
             my->unix_server.set_max_http_body_size(my->max_body_size);
             my->unix_server.listen(*my->unix_endpoint);
-            my->unix_server.set_http_handler([&](connection_hdl hdl) {
-               my->handle_http_request<detail::asio_local_with_stub_log>( my->unix_server.get_con_from_hdl(hdl));
-            });
+            // 如果是unix端口,则说明是一个全节点,因此需要设置http处理函数,这里面传入一个回调函数,set_http_handler函数使用传入的函数进行处理
+            my->unix_server.set_http_handler(
+               // unix_server读取connection_ptr,connection_ptr中包含具体的处理方式,随后将该指针传递给handle_http_request函数,
+               [&](connection_hdl hdl) {
+               my->handle_http_request<detail::asio_local_with_stub_log>( my->unix_server.get_con_from_hdl(hdl));}
+            );
             my->unix_server.start_accept();
          } catch ( const fc::exception& e ){
             elog( "unix socket service failed to start: ${e}", ("e",e.to_detail_string()));
@@ -519,7 +530,7 @@ namespace eosio {
             throw;
          }
       }
-
+      // 如果是一个浏览器端?
       if(my->https_listen_endpoint) {
          try {
             my->create_server_for_endpoint(*my->https_listen_endpoint, my->https_server);
@@ -528,7 +539,9 @@ namespace eosio {
             });
 
             ilog("start listening for https requests");
+            // 监听socket通信端口
             my->https_server.listen(*my->https_listen_endpoint);
+            // 等待建立客户端远程连接
             my->https_server.start_accept();
          } catch ( const fc::exception& e ){
             elog( "https service failed to start: ${e}", ("e",e.to_detail_string()));
@@ -552,6 +565,7 @@ namespace eosio {
          my->unix_server.stop_listening();
    }
 
+// 其他插件模块通过add_handler注册url回调函数
    void http_plugin::add_handler(const string& url, const url_handler& handler) {
       ilog( "add api url: ${c}", ("c",url) );
       app().get_io_service().post([=](){

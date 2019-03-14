@@ -652,8 +652,11 @@ make_keosd_signature_provider(const std::shared_ptr<producer_plugin_impl>& impl,
    };
 }
 
+// 传入配置项参数,然后开始初始化工作
 void producer_plugin::plugin_initialize(const boost::program_options::variables_map& options)
-{ try {
+{ 
+   
+   try {
    my->chain_plug = app().find_plugin<chain_plugin>();
    EOS_ASSERT( my->chain_plug, plugin_config_exception, "chain_plugin not found" );
    my->_options = &options;
@@ -768,6 +771,8 @@ void producer_plugin::plugin_initialize(const boost::program_options::variables_
 
 } FC_LOG_AND_RETHROW() }
 
+
+// 启动程序
 void producer_plugin::plugin_startup()
 { try {
    auto& logger_map = fc::get_logger_map();
@@ -810,7 +815,7 @@ void producer_plugin::plugin_startup()
          //_production_skip_flags |= eosio::chain::skip_undo_history_check;
       }
    }
-
+   // 开始进入区块生产循环中,持续不断的开始生产区块
    my->schedule_production_loop();
 
    ilog("producer plugin:  plugin_startup() end");
@@ -1080,37 +1085,37 @@ enum class tx_category {
    EXPIRED,
 };
 
-// 尝试打包区块
+// 尝试生产区块,返回区块生产结果
 producer_plugin_impl::start_block_result producer_plugin_impl::start_block() {
-   chain::controller& chain = chain_plug->chain();
+   chain::controller& chain = chain_plug->chain();       // 获取整个链控制器
 
-   if( chain.get_read_mode() == chain::db_read_mode::READ_ONLY )
+   if( chain.get_read_mode() == chain::db_read_mode::READ_ONLY )     // Speculative Head Read_ONLY irreversible 四种结果
       return start_block_result::waiting;
 
-   const auto& hbs = chain.head_block_state();
+   const auto& hbs = chain.head_block_state();                       // 获取当前区块的状态,存储在hbs中
 
    //Schedule for the next second's tick regardless of chain state
    // If we would wait less than 50ms (1/10 of block_interval), wait for the whole block interval.
    const fc::time_point now = fc::time_point::now();
    const fc::time_point block_time = calculate_pending_block_time();// 这个函数的含义是什么?
 
-   _pending_block_mode = pending_block_mode::producing;
+   _pending_block_mode = pending_block_mode::producing;           // 初始化为生产区块的状态
 
    // Not our turn
-   const auto& scheduled_producer = hbs->get_scheduled_producer(block_time);// 获取当前生产者
-   auto currrent_watermark_itr = _producer_watermarks.find(scheduled_producer.producer_name);
-   auto signature_provider_itr = _signature_providers.find(scheduled_producer.block_signing_key);
-   auto irreversible_block_age = get_irreversible_block_age();
+   const auto& scheduled_producer = hbs->get_scheduled_producer(block_time);// 获取当前BP的公钥
+   auto currrent_watermark_itr = _producer_watermarks.find(scheduled_producer.producer_name);   // 查找是否存在BP的公钥
+   auto signature_provider_itr = _signature_providers.find(scheduled_producer.block_signing_key);  // 在签名中寻找当前BP的公钥
+   auto irreversible_block_age = get_irreversible_block_age();                                     // 获取不可逆区块的时间
 
    // If the next block production opportunity is in the present or future, we're synced.
-   if( !_production_enabled ) {                                                        // 还在同步区块,暂时不能进行生产
+   if( !_production_enabled ) {                                   // 当前还无法生产区块,表明还在同步区块,暂时不能进行生产
       _pending_block_mode = pending_block_mode::speculating;
-   } else if( _producers.find(scheduled_producer.producer_name) == _producers.end()) { // 检测当前区块生产者是否属于本节点
+   } else if( _producers.find(scheduled_producer.producer_name) == _producers.end()) { // 发现当前区块生产者不存在,设置区块模式为speculating模式
       _pending_block_mode = pending_block_mode::speculating;
-   } else if (signature_provider_itr == _signature_providers.end()) {                  // 没有生BP的私钥
+   } else if (signature_provider_itr == _signature_providers.end()) {           // 当前的生产者签名中没有对应的bp的的私钥,同样设置speculating模式
       elog("Not producing block because I don't have the private key for ${scheduled_key}", ("scheduled_key", scheduled_producer.block_signing_key));
       _pending_block_mode = pending_block_mode::speculating;
-   } else if ( _pause_production ) {                                                   // 暂停生产区块
+   } else if ( _pause_production ) {                                       // 如果当前状态是暂停生产区块,同样设置为speculating状态
       elog("Not producing block because production is explicitly paused");
       _pending_block_mode = pending_block_mode::speculating;
    } else if ( _max_irreversible_block_age_us.count() >= 0 && irreversible_block_age >= _max_irreversible_block_age_us ) {
@@ -1118,6 +1123,7 @@ producer_plugin_impl::start_block_result producer_plugin_impl::start_block() {
       _pending_block_mode = pending_block_mode::speculating;
    }
 
+   // 如果执行后都没有发生改变,仍然是producing状态,则开始执行
    if (_pending_block_mode == pending_block_mode::producing) {
       // determine if our watermark excludes us from producing at this point
       if (currrent_watermark_itr != _producer_watermarks.end()) {
@@ -1161,6 +1167,7 @@ producer_plugin_impl::start_block_result producer_plugin_impl::start_block() {
 
    const auto& pbs = chain.pending_block_state();
    if (pbs) {
+      // 开始打包交易
       const fc::time_point preprocess_deadline = calculate_block_deadline(block_time);
 
       if (_pending_block_mode == pending_block_mode::producing && pbs->block_signing_key != scheduled_producer.block_signing_key) {
@@ -1172,6 +1179,7 @@ producer_plugin_impl::start_block_result producer_plugin_impl::start_block() {
       bool exhausted = false;
 
       // remove all persisted transactions that have now expired
+      // 移除所有持久化的过期交易 ( 持久化， push_transaction 执行成功的 trx)
       auto& persisted_by_id = _persistent_transactions.get<by_id>();
       auto& persisted_by_expiry = _persistent_transactions.get<by_expiry>();
       if (!persisted_by_expiry.empty()) {
@@ -1209,8 +1217,10 @@ producer_plugin_impl::start_block_result producer_plugin_impl::start_block() {
             // there is no need for unapplied transactions they can be dropped
             chain.drop_all_unapplied_transactions();
          } else {
+            // 执行所有unapplied transaction, 党block的trx未全部消化完就出现错误,将剩下的trxinsert进入unapplied_transaction
             std::vector<transaction_metadata_ptr> apply_trxs;
             { // derive appliable transactions from unapplied_transactions and drop droppable transactions
+               // 将未过期的 unapplied transaction emplace 到 apply_trxs
                auto unapplied_trxs = chain.get_unapplied_transactions();
                apply_trxs.reserve(unapplied_trxs.size());
 
@@ -1239,6 +1249,7 @@ producer_plugin_impl::start_block_result producer_plugin_impl::start_block() {
             }
 
             if (!apply_trxs.empty()) {
+               // 执行 aply_trxs里的trx
                int num_applied = 0;
                int num_failed = 0;
                int num_processed = 0;
@@ -1416,11 +1427,16 @@ producer_plugin_impl::start_block_result producer_plugin_impl::start_block() {
 // 控制21个全局节点的生产区块的函数
 void producer_plugin_impl::schedule_production_loop() {
    chain::controller& chain = chain_plug->chain();
-   _timer.cancel();                               // _timer 是boost库中asio的一个定时器
+   _timer.cancel();                               // _timer 是boost库中asio的一个定时器,关闭所有异步等待
    std::weak_ptr<producer_plugin_impl> weak_this = shared_from_this();
 
    auto result = start_block();  // 开始打包一个区块,返回结果有succeed,failed,waiting,exhausted
-
+　　//根据结果来判断本节点应该采取哪一种动作，所有操作都是异步的，主要分下面四种：
+　　/*  1.　　获取各种调度信息异常，则重新获取数据进行调度；, failed
+　　　　 2.　　其它节点正在出块，则进行等待, waiting
+　　　　 3.　　轮到本节点出块，则进行出块操作；producing
+　　　　 4.　　计算下一个生产者出块的时间，然后再进行系统调度,succeed
+　　*/
    if (result == start_block_result::failed) {
       elog("Failed to start a pending block, will try again later");
       _timer.expires_from_now( boost::posix_time::microseconds( config::block_interval_us  / 10 )); // 0.05秒后定时器失效

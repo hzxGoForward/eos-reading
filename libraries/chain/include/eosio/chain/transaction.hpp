@@ -91,7 +91,7 @@ namespace eosio { namespace chain {
       , context_free_data(std::move(context_free_data))
       {}
 
-      vector<signature_type>    signatures;
+      vector<signature_type>    signatures;        // 签名
       vector<bytes>             context_free_data; ///< for each context-free action, there is an entry here
 
       const signature_type&     sign(const private_key_type& key, const chain_id_type& chain_id);
@@ -113,6 +113,8 @@ namespace eosio { namespace chain {
       packed_transaction& operator=(const packed_transaction&) = delete;
       packed_transaction& operator=(packed_transaction&&) = default;
 
+      // main 函数中push_transaction 进行交易打包
+      // 这步骤,最后将交易打包,组装成packed_trx和context_free_data,最后放在unpacked_transaction中
       explicit packed_transaction(const signed_transaction& t, compression_type _compression = none)
       :signatures(t.signatures), compression(_compression), unpacked_trx(t)
       {
@@ -159,14 +161,14 @@ namespace eosio { namespace chain {
       friend struct fc::reflector_init_visitor<packed_transaction>;
       void reflector_init();
    private:
-      vector<signature_type>                  signatures;
-      fc::enum_type<uint8_t,compression_type> compression;
-      bytes                                   packed_context_free_data;
-      bytes                                   packed_trx;
+      vector<signature_type>                  signatures;                     // 交易签名
+      fc::enum_type<uint8_t,compression_type> compression;                    // 压缩类型
+      bytes                                   packed_context_free_data;       // 打包上下文无关的数据
+      bytes                                   packed_trx;                     // 打包成vector<char>类型的交易,打包后的交易
 
    private:
       // cache unpacked trx, for thread safety do not modify after construction
-      signed_transaction                      unpacked_trx;
+      signed_transaction                      unpacked_trx;                   // 在本地打包后存储起来的没有打包的交易
    };
 
    using packed_transaction_ptr = std::shared_ptr<packed_transaction>;
