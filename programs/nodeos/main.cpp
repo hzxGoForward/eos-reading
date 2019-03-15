@@ -109,6 +109,7 @@ int main(int argc, char** argv)
       // 如果初始化失败,则程序停止运行
       // http_plugin与cleos交互
       // producer_plugin生产区块
+      // 调用初始化函数之后, initialized_plugins中存储 已经初始化的插件
       if(!app().initialize<chain_plugin, http_plugin, net_plugin, producer_plugin>(argc, argv))    // application.hpp 77行
          return INITIALIZE_FAIL;
       

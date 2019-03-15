@@ -23,7 +23,7 @@ namespace eosio { namespace chain {
     *  Defines both the order, account name, and signing keys of the active set of producers.
     */
    struct producer_schedule_type {
-      uint32_t                                       version = 0; ///< sequentially incrementing version number
+      uint32_t                                       version = 0; ///< 序列式递增的版本号
       vector<producer_key>                           producers;
 
       public_key_type get_producer_key( account_name p )const {

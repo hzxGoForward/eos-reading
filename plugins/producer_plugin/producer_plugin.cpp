@@ -182,35 +182,45 @@ class producer_plugin_impl : public std::enable_shared_from_this<producer_plugin
       // path to write the snapshots to
       bfs::path _snapshots_dir;
 
-
+      // 收到一个新的区块之后开始检验
       void on_block( const block_state_ptr& bsp ) {
-         if( bsp->header.timestamp <= _last_signed_block_time ) return;
-         if( bsp->header.timestamp <= _start_time ) return;
-         if( bsp->block_num <= _last_signed_block_num ) return;
+         if( bsp->header.timestamp <= _last_signed_block_time ) return;    // 新区块得时间戳不应该≤当前最后一个签名的区块时间
+         if( bsp->header.timestamp <= _start_time ) return;                // 新区块得时间戳不应该早于开始时间,这个开始时间应该是可以开始生产区块的时间
+         if( bsp->block_num <= _last_signed_block_num ) return;            // 新区块的块号不能小于等于当前最后一个签名区块的块号
 
-         const auto& active_producer_to_signing_key = bsp->active_schedule.producers;
+         const auto& active_producer_to_signing_key = bsp->active_schedule.producers;  // 获取区块活跃的所有生产者
 
+         // active_producers中插入计划出块的BP名称
          flat_set<account_name> active_producers;
          active_producers.reserve(bsp->active_schedule.producers.size());
          for (const auto& p: bsp->active_schedule.producers) {
             active_producers.insert(p.producer_name);
          }
-
+         // _producers是本地保存的生产区块的BP
+         // active_producers表示活跃着的生产区块的额BP
+         // set_intersection取两个vector中producer的交集, 为什么要求交集? 这一步并没有看明白呢,fuck~
          std::set_intersection( _producers.begin(), _producers.end(),
                                 active_producers.begin(), active_producers.end(),
                                 boost::make_function_output_iterator( [&]( const chain::account_name& producer )
          {
+            // 如果交集的生产者不等于接受的区块的生产者, 说明是校验别人生产的区块, 
+            // 如果相等, 表明是自己的区块, 不用做处理. 
             if( producer != bsp->header.producer ) {
+               // 在活跃的区块生产者中寻找当前producer, 看当前producer是否具有生产权利
                auto itr = std::find_if( active_producer_to_signing_key.begin(), active_producer_to_signing_key.end(),
                                         [&](const producer_key& k){ return k.producer_name == producer; } );
+               // 如果没有找到,说明这个区块是非法的,直接抛弃
+               // 如果找到, 进一步进行验证
                if( itr != active_producer_to_signing_key.end() ) {
                   auto private_key_itr = _signature_providers.find( itr->block_signing_key );
+                  // 寻找本地生产者公钥
                   if( private_key_itr != _signature_providers.end() ) {
                      auto d = bsp->sig_digest();
-                     auto sig = private_key_itr->second( d );
+                     auto sig = private_key_itr->second( d );  // 对摘要进行签名? 是这个意思? 即表示本地区块确认了这个区块的合法性?
                      _last_signed_block_time = bsp->header.timestamp;
                      _last_signed_block_num  = bsp->block_num;
-
+                     // 组装生产确认数据字段，包括区块id，区块摘要，生产者，签名。发射信号confirmed\_block。
+                     // 但经过搜索，项目中目前没有对该信号设置槽connection
    //                  ilog( "${n} confirmed", ("n",name(producer)) );
                      _self->confirmed_block( { bsp->id, d, producer, sig } );
                   }
@@ -220,14 +230,22 @@ class producer_plugin_impl : public std::enable_shared_from_this<producer_plugin
 
          // since the watermark has to be set before a block is created, we are looking into the future to
          // determine the new schedule to identify producers that have become active
+         // 一个区块生产之前需要为标识区块的生产者. 水印就是一个kv结构对象, 
+         // 例如_producer_watermarks[new_producer]= new_block_num
+
          chain::controller& chain = chain_plug->chain();
          const auto hbn = bsp->block_num;
+         // 验证完一个区块之后,设置新区块的区块头, 时间戳, 已经以前一个区块的id等信息
          auto new_block_header = bsp->header;
          new_block_header.timestamp = new_block_header.timestamp.next();
          new_block_header.previous = bsp->id;
          auto new_bs = bsp->generate_next(new_block_header.timestamp);
 
          // for newly installed producers we can set their watermarks to the block they became active
+         // 接下来，对于新安装的生产者，可以设置他们的水印使他们变为活跃生产者。
+         // 为什么是新安装的生产者, 我猜因为EOS有21个超级节点, 这是在检测21个节点是不是已经成产完毕了,应该拿到新的一波的BP了
+         // 因此是在更新新的一波的21个节点的BP
+         // 每次新开始的一轮, 新的区块的version就会+1, 这是猜测,目前还未证实
          if (new_bs.maybe_promote_pending() && bsp->active_schedule.version != new_bs.active_schedule.version) {
             flat_set<account_name> new_producers;
             new_producers.reserve(new_bs.active_schedule.producers.size());
@@ -772,7 +790,7 @@ void producer_plugin::plugin_initialize(const boost::program_options::variables_
 } FC_LOG_AND_RETHROW() }
 
 
-// 启动程序
+// 启动插件, 插件开始执行
 void producer_plugin::plugin_startup()
 { try {
    auto& logger_map = fc::get_logger_map();
@@ -786,6 +804,7 @@ void producer_plugin::plugin_startup()
 
    ilog("producer plugin:  plugin_startup() begin");
 
+
    chain::controller& chain = my->chain_plug->chain();
    EOS_ASSERT( my->_producers.empty() || chain.get_read_mode() == chain::db_read_mode::SPECULATIVE, plugin_config_exception,
               "node cannot have any producer-name configured because block production is impossible when read_mode is not \"speculative\"" );
@@ -793,7 +812,7 @@ void producer_plugin::plugin_startup()
    EOS_ASSERT( my->_producers.empty() || chain.get_validation_mode() == chain::validation_mode::FULL, plugin_config_exception,
               "node cannot have any producer-name configured because block production is not safe when validation_mode is not \"full\"" );
 
-
+   // 连接信号槽, on_block和on_irreversible_block
    my->_accepted_block_connection.emplace(chain.accepted_block.connect( [this]( const auto& bsp ){ my->on_block( bsp ); } ));
    my->_irreversible_block_connection.emplace(chain.irreversible_block.connect( [this]( const auto& bsp ){ my->on_irreversible_block( bsp->block ); } ));
 
