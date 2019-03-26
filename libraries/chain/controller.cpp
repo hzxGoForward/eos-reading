@@ -1425,6 +1425,7 @@ struct controller_impl
       });
    }
 
+   // controler
    void push_block(std::future<block_state_ptr> &block_state_future)
    {
       controller::block_status s = controller::block_status::complete;
@@ -1437,8 +1438,9 @@ struct controller_impl
       {
          block_state_ptr new_header_state = block_state_future.get();
          auto &b = new_header_state->block;
+         // 使用checkpoint校验区块id，checkpoint是什么？emit最后由谁来接收信号？
          emit(self.pre_accepted_block, b);
-
+         // 更新fork_db相关数据
          fork_db.add(new_header_state, false);
 
          if (conf.trusted_producers.count(b->producer))
@@ -1447,6 +1449,7 @@ struct controller_impl
          };
          emit(self.accepted_block_header, new_header_state);
 
+         // 如果条件满足，则切换
          if (read_mode != db_read_mode::IRREVERSIBLE)
          {
             maybe_switch_forks(s);
