@@ -1736,6 +1736,7 @@ class App final {
     /// @name Parsing
     ///@{
 
+    // 解析命令行的输入，并执行相应的命令
     /// Parses the command line - throws errors
     /// This must be called after the options are in but before the rest of the program.
     std::vector<std::string> parse(int argc, char **argv) {
