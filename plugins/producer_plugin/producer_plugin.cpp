@@ -1705,7 +1705,6 @@ void producer_plugin_impl::schedule_production_loop()
    }
    else if (_pending_block_mode == pending_block_mode::producing)
    {
-
       // 成功打包了一个区块,但是有可能超时
       static const boost::posix_time::ptime epoch(boost::gregorian::date(1970, 1, 1));
       // pending_block_time 返回最后一个区块的时间戳(是刚刚生产的区块的时间戳还是之前有效区块的时间戳,暂时还不清楚)
