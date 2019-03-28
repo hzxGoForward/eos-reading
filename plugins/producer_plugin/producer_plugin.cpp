@@ -1734,7 +1734,8 @@ void producer_plugin_impl::schedule_production_loop()
          }
       }
 
-      _timer.async_wait([&chain, weak_this, cid = ++_timer_corelation_id](const boost::system::error_code &ec) {
+      _timer.async_wait(
+         [&chain, weak_this, cid = ++_timer_corelation_id](const boost::system::error_code &ec) {
          auto self = weak_this.lock();
          if (self && ec != boost::asio::error::operation_aborted && cid == self->_timer_corelation_id)
          {
@@ -1855,26 +1856,36 @@ void producer_plugin_impl::produce_block()
 {
    //ilog("produce_block ${t}", ("t", fc::time_point::now())); // for testing _produce_time_offset_us
    EOS_ASSERT(_pending_block_mode == pending_block_mode::producing, producer_exception, "called produce_block while not actually producing");
+   
    chain::controller &chain = chain_plug->chain();
+   // 获取当前打包好的区块的指针
    const auto &pbs = chain.pending_block_state();
+   // 获取打包的区块的区块头
    const auto &hbs = chain.head_block_state();
    EOS_ASSERT(pbs, missing_pending_block_state, "pending_block_state does not exist but it should, another plugin may have corrupted it");
+   // 寻找BP的私钥
    auto signature_provider_itr = _signature_providers.find(pbs->block_signing_key);
 
    EOS_ASSERT(signature_provider_itr != _signature_providers.end(), producer_priv_key_not_found, "Attempting to produce a block for which we don't have the private key");
 
    //idump( (fc::time_point::now() - chain.pending_block_time()) );
+   // 将区块内容写入数据库中，确定区块头中的merkel_root等内容
    chain.finalize_block();
+
+   // 对区块进行签名
    chain.sign_block([&](const digest_type &d) {
       auto debug_logger = maybe_make_debug_time_logger();
       return signature_provider_itr->second(d);
    });
-
+   // 提交区块
    chain.commit_block();
+   // 获取区块时间戳
    auto hbt = chain.head_block_time();
    //idump((fc::time_point::now() - hbt));
 
+   // 获取刚刚添加的最新的区块头状态
    block_state_ptr new_bs = chain.head_block_state();
+   // 记录最新的区块生产者和其生产的区块号
    _producer_watermarks[new_bs->header.producer] = chain.head_block_num();
 
    ilog("Produced block ${id}... #${n} @ ${t} signed by ${p} [trxs: ${count}, lib: ${lib}, confirmed: ${confs}]",
