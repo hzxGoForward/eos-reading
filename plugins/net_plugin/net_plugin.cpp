@@ -560,7 +560,7 @@ namespace eosio {
       }
    };
 
-   // 消息处理结构体
+   // 消息处理结构体,针对收到的信息不同，进行不同处理
    struct msg_handler : public fc::visitor<void> {
       net_plugin_impl &impl;
       connection_ptr c;
@@ -579,7 +579,7 @@ namespace eosio {
          EOS_ASSERT( false, plugin_config_exception, "operator()(packed_transaction&&) should be called" );
       }
 
-      // 如果收到信息是msg，相应的处理block
+      // 如果收到信息是区块，，相应的处理block
       void operator()( signed_block&& msg ) const {
          impl.handle_message( c, std::make_shared<signed_block>( std::move( msg ) ) );
       }
@@ -2432,7 +2432,7 @@ namespace eosio {
 
       go_away_reason reason = fatal_other;
       try {
-         // 对区块进行检查
+         // 对区块进行检查？不过检查函数比较恶心，我他妈不明白那一大堆玩意儿是啥。。。。shit！！！
          chain_plug->accept_block(msg); //, sync_master->is_active(c));
          reason = no_reason;
       } catch( const unlinkable_block_exception &ex) {
