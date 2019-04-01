@@ -124,6 +124,7 @@ namespace eosio {
 
       std::set< connection_ptr >       connections;
       bool                             done = false;
+      // 这两个变量都是啥呀。。。
       unique_ptr< sync_manager >       sync_master;
       unique_ptr< dispatch_manager >   dispatcher;
 
@@ -134,9 +135,10 @@ namespace eosio {
       boost::asio::steady_timer::duration   txn_exp_period;
       boost::asio::steady_timer::duration   resp_expected_period;
       boost::asio::steady_timer::duration   keepalive_interval{std::chrono::seconds{32}};
-      int                           max_cleanup_time_ms = 0;
+      int                              max_cleanup_time_ms = 0;
 
-      const std::chrono::system_clock::duration peer_authentication_interval{std::chrono::seconds{1}}; ///< Peer clock may be no more than 1 second skewed from our clock, including network latency.
+      ///< Peer clock may be no more than 1 second skewed from our clock, including network latency.
+      const std::chrono::system_clock::duration peer_authentication_interval{std::chrono::seconds{1}}; 
 
       bool                          network_version_match = false;
       chain_id_type                 chain_id;
@@ -558,6 +560,7 @@ namespace eosio {
       }
    };
 
+   // 消息处理结构体
    struct msg_handler : public fc::visitor<void> {
       net_plugin_impl &impl;
       connection_ptr c;
@@ -576,9 +579,11 @@ namespace eosio {
          EOS_ASSERT( false, plugin_config_exception, "operator()(packed_transaction&&) should be called" );
       }
 
+      // 如果收到信息是msg，相应的处理block
       void operator()( signed_block&& msg ) const {
          impl.handle_message( c, std::make_shared<signed_block>( std::move( msg ) ) );
       }
+      // 如果收到的是交易，相应处理trx
       void operator()( packed_transaction&& msg ) const {
          impl.handle_message( c, std::make_shared<packed_transaction>( std::move( msg ) ) );
       }
@@ -1151,6 +1156,9 @@ namespace eosio {
          net_message msg;
          fc::raw::unpack(ds, msg);  // 将解压的ds信息放入msg中
          msg_handler m(impl, shared_from_this() );
+         // 判断msg的类型，msg可以是带签名的区块或者打包后的交易
+         // 如果是区块，获取signed_block后放入m中
+         // 如果是trx，则获取packed_trx后放入m中
          if( msg.contains<signed_block>() ) {
             m( std::move( msg.get<signed_block>() ) );
          } else if( msg.contains<packed_transaction>() ) {
@@ -1847,6 +1855,7 @@ namespace eosio {
       boost::system::error_code ec;
       con->socket->set_option( nodelay, ec );
       if (ec) {
+         // 如果接受数据出错， 直接关闭连接，写日志
          elog( "connection failed to ${peer}: ${error}",
                ( "peer", con->peer_name())("error",ec.message()));
          con->connecting = false;
@@ -1854,6 +1863,7 @@ namespace eosio {
          return false;
       }
       else {
+         // 读取数据，已经开启的session+1
          start_read_message( con );
          ++started_sessions;
          return true;
@@ -1895,8 +1905,7 @@ namespace eosio {
                      ++num_clients;
                      connection_ptr c = std::make_shared<connection>( socket );
                      connections.insert( c );
-                     start_session( c );
-
+                     start_session( c );        // 开始于链接的c进行回话
                   }
                   else {
                      if (from_addr >= max_nodes_per_host) {
@@ -1930,7 +1939,6 @@ namespace eosio {
    }
 
    void net_plugin_impl::start_read_message(const connection_ptr& conn) {
-
       try {
          if(!conn->socket) {
             return;
@@ -1939,6 +1947,7 @@ namespace eosio {
 
          std::size_t minimum_read = conn->outstanding_read_bytes ? *conn->outstanding_read_bytes : message_header_size;
 
+         // 默认为false，在plugin_initialized中使用
          if (use_socket_read_watermark) {
             const size_t max_socket_read_watermark = 4096;
             std::size_t socket_read_watermark = std::min<std::size_t>(minimum_read, max_socket_read_watermark);
@@ -1954,8 +1963,15 @@ namespace eosio {
             }
          };
 
+         // 从stream中异步读取固定大小的数据
+         /*
+         async_read(AsyncReadStream &S, const MutableBufferSequence& buffers, ReadHandler&& handler, )
+         从*conn->socket中读取data，读到buffers中去，buffers的大小告诉系统读取多少
+         handler是读取数据完毕之后调用的函数
+         */
          boost::asio::async_read(*conn->socket,
-            conn->pending_message_buffer.get_buffer_sequence_for_boost_async_read(), completion_handler,
+            conn->pending_message_buffer.get_buffer_sequence_for_boost_async_read(), 
+            completion_handler,
             [this,weak_conn]( boost::system::error_code ec, std::size_t bytes_transferred ) {
                auto conn = weak_conn.lock();
                if (!conn) {
@@ -1994,6 +2010,9 @@ namespace eosio {
 
                            if (bytes_in_buffer >= total_message_bytes) {
                               conn->pending_message_buffer.advance_read_ptr(message_header_size);
+                              // 这一部分是网络通信的内容，对于其中细节不甚了解
+                              // 接收的数据传递到pending_message_buffer中，process_next_message中进行处理
+                              // 从pending_message_buffer中处理数据
                               if (!conn->process_next_message(*this, message_length)) {
                                  return;
                               }
@@ -2389,13 +2408,13 @@ namespace eosio {
       });
    }
 
+   // 如果从网络中收到一个区块，执行相应的处理
    void net_plugin_impl::handle_message(const connection_ptr& c, const signed_block_ptr& msg) {
       controller &cc = chain_plug->chain();
       block_id_type blk_id = msg->id();
       uint32_t blk_num = msg->block_num();
       fc_dlog(logger, "canceling wait on ${p}", ("p",c->peer_name()));
       c->cancel_wait();
-
       try {
          if( cc.fetch_block_by_id(blk_id)) {
             sync_master->recv_block(c, blk_id, blk_num);
@@ -2413,6 +2432,7 @@ namespace eosio {
 
       go_away_reason reason = fatal_other;
       try {
+         // 对区块进行检查
          chain_plug->accept_block(msg); //, sync_master->is_active(c));
          reason = no_reason;
       } catch( const unlinkable_block_exception &ex) {
@@ -2873,6 +2893,7 @@ namespace eosio {
          my->acceptor->open(my->listen_endpoint.protocol());
          my->acceptor->set_option(tcp::acceptor::reuse_address(true));
          try {
+         // acceptor 来自于boost::asio::ip::tcp，即tcp::acceptor
            my->acceptor->bind(my->listen_endpoint);
          } catch (const std::exception& e) {
            ilog("net_plugin::plugin_startup failed to bind to port ${port}",
