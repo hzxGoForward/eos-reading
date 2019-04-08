@@ -113,7 +113,7 @@ namespace eosio {
                chain::private_key_type> private_keys; ///< overlapping with producer keys, also authenticating non-producing nodes
 
       enum possible_connections : char {
-         None = 0,
+            None = 0,
             Producers = 1 << 0,
             Specified = 1 << 1,
             Any = 1 << 2
@@ -1905,7 +1905,7 @@ namespace eosio {
                      ++num_clients;
                      connection_ptr c = std::make_shared<connection>( socket );
                      connections.insert( c );
-                     start_session( c );        // 开始于链接的c进行回话
+                     start_session( c );        // 开始于链接的c进行会话
                   }
                   else {
                      if (from_addr >= max_nodes_per_host) {
@@ -2011,8 +2011,8 @@ namespace eosio {
                            if (bytes_in_buffer >= total_message_bytes) {
                               conn->pending_message_buffer.advance_read_ptr(message_header_size);
                               // 这一部分是网络通信的内容，对于其中细节不甚了解
-                              // 接收的数据传递到pending_message_buffer中，process_next_message中进行处理
-                              // 从pending_message_buffer中处理数据
+                              // 接收的数据传递到pending_message_buffer中，
+                              // process_next_message中进行处理从pending_message_buffer中处理数据
                               if (!conn->process_next_message(*this, message_length)) {
                                  return;
                               }
@@ -2390,6 +2390,7 @@ namespace eosio {
          return;
       }
       dispatcher->recv_transaction(c, tid);
+      // 验证交易
       chain_plug->accept_transaction(ptrx, [c, this, ptrx](const static_variant<fc::exception_ptr, transaction_trace_ptr>& result) {
          if (result.contains<fc::exception_ptr>()) {
             peer_dlog(c, "bad packed_transaction : ${m}", ("m",result.get<fc::exception_ptr>()->what()));
@@ -2397,13 +2398,14 @@ namespace eosio {
             auto trace = result.get<transaction_trace_ptr>();
             if (!trace->except) {
                fc_dlog(logger, "chain accepted transaction");
+               // 广播交易
                this->dispatcher->bcast_transaction(ptrx);
                return;
             }
 
             peer_elog(c, "bad packed_transaction : ${m}", ("m",trace->except->what()));
          }
-
+         // 拒绝交易
          dispatcher->rejected_transaction(ptrx->id);
       });
    }
@@ -2417,6 +2419,7 @@ namespace eosio {
       c->cancel_wait();
       try {
          if( cc.fetch_block_by_id(blk_id)) {
+            // recv_block函数具体含义为止，同步区块数据？不应该是检查在先？
             sync_master->recv_block(c, blk_id, blk_num);
             return;
          }
@@ -2425,14 +2428,15 @@ namespace eosio {
          elog("Caught an unknown exception trying to recall blockID");
       }
 
-      dispatcher->recv_block(c, blk_id, blk_num);
+      dispatcher->recv_block(c, blk_id, blk_num);  // 进行报告，我已经从连接c收到一个编号blk_id和blk_num的区块？
       fc::microseconds age( fc::time_point::now() - msg->timestamp);
       peer_ilog(c, "received signed_block : #${n} block age in secs = ${age}",
               ("n",blk_num)("age",age.to_seconds()));
 
       go_away_reason reason = fatal_other;
       try {
-         // 对区块进行检查？不过检查函数比较恶心，我他妈不明白那一大堆玩意儿是啥。。。。shit！！！
+         // 在chain_plug中再检查其具体含义，看catch中的内容，应该是使用chain_plug对区块进行检查
+         // 如果检查无错误，reason的值应该是no_reason
          chain_plug->accept_block(msg); //, sync_master->is_active(c));
          reason = no_reason;
       } catch( const unlinkable_block_exception &ex) {
@@ -2467,9 +2471,11 @@ namespace eosio {
                c->trx_state.modify( ctx, ubn );
             }
          }
+         // 这里再次进行recv_block，不明白其含义
          sync_master->recv_block(c, blk_id, blk_num);
       }
       else {
+         // 验证区块过程中出现错误，直接拒绝这个区块
          sync_master->rejected_block(c, blk_num);
       }
    }
