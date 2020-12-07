@@ -61,11 +61,12 @@ enum class validation_mode
 
 class controller
 {
- public:
+public:
    struct config
    {
+      // 黑名单记录有问题的一些账户和智能合约吗？
       flat_set<account_name> sender_bypass_whiteblacklist;
-      flat_set<account_name> actor_whitelist;
+      flat_set<account_name> actor_whitelist;   
       flat_set<account_name> actor_blacklist;
       flat_set<account_name> contract_whitelist;
       flat_set<account_name> contract_blacklist;
@@ -97,8 +98,8 @@ class controller
 
    enum class block_status
    {
-      irreversible = 0, ///< this block has already been applied before by this node and is considered irreversible
-      validated = 1,    ///< this is a complete block signed by a valid producer and has been previously applied by this node and therefore validated but it is not yet irreversible
+      irreversible = 0, ///< 不可更改
+      validated = 1,    ///< 可能会被更改
       complete = 2,     ///< this is a complete block signed by a valid producer but is not yet irreversible nor has it yet been applied by this node
       incomplete = 3,   ///< this is an incomplete block (either being produced by a producer or speculatively produced by a node)
    };
@@ -126,8 +127,11 @@ class controller
           *
           *  @return vector of transactions which have been unapplied
           */
+   // 获取还未执行的交易列表
    vector<transaction_metadata_ptr> get_unapplied_transactions() const;
+   // 丢弃某个不会执行的交易
    void drop_unapplied_transaction(const transaction_metadata_ptr &trx);
+   // 丢弃所有不再执行的交易
    void drop_all_unapplied_transactions();
 
    /**
@@ -139,17 +143,20 @@ class controller
           *
           * @return
           */
+   // 获取已经打包到当前区块头中的交易
    vector<transaction_id_type> get_scheduled_transactions() const;
 
    /**
           *
           */
+   
    transaction_trace_ptr push_transaction(const transaction_metadata_ptr &trx, fc::time_point deadline, uint32_t billed_cpu_time_us = 0);
 
    /**
           * Attempt to execute a specific transaction in our deferred trx database
           *
           */
+   // push_scheduled_transaction 执行一个设定执行时间的交易
    transaction_trace_ptr push_scheduled_transaction(const transaction_id_type &scheduled, fc::time_point deadline, uint32_t billed_cpu_time_us = 0);
 
    void finalize_block();
@@ -189,7 +196,7 @@ class controller
    void set_key_blacklist(const flat_set<public_key_type> &);
 
    uint32_t head_block_num() const;
-   time_point head_block_time() const;
+   time_point head_bloc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      k_time() const;
    block_id_type head_block_id() const;
    account_name head_block_producer() const;
    const block_header &head_block_header() const;
@@ -308,7 +315,7 @@ class controller
       return pretty_output;
    }
 
- private:
+private:
    friend class apply_context;
    friend class transaction_context;
 

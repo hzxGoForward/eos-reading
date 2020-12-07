@@ -127,28 +127,28 @@ struct pending_state
 struct controller_impl
 {
    controller &self;
-   chainbase::database db;
+   chainbase::database db;                // 主链数据库
    chainbase::database reversible_blocks; ///< a special database to persist blocks that have successfully been applied but are still reversible
-   block_log blog;
-   optional<pending_state> pending;
-   block_state_ptr head;
-   fork_database fork_db;
+   block_log blog;                        // 负责记录日志
+   optional<pending_state> pending;       // 记录添加区块的各种状态
+   block_state_ptr head;                  // 指向当前区块头状态指针，包括已签名的区块、区块中的交易、是否合法以及是否在主链上。
+   fork_database fork_db;                 // 新收到validated的区块，有可能被回滚，因此放在fork_db中
    wasm_interface wasmif;
    resource_limits_manager resource_limits;
    authorization_manager authorization;
-   controller::config conf;
-   chain_id_type chain_id;
-   bool replaying = false;
+   controller::config conf;               // 配置文件
+   chain_id_type chain_id;                // 所在链的编号？
+   bool replaying = false;                // 是否在replay区块链
    optional<fc::time_point> replay_head_time;
-   db_read_mode read_mode = db_read_mode::SPECULATIVE;
+   db_read_mode read_mode = db_read_mode::SPECULATIVE;   // 读取模式
    bool in_trx_requiring_checks = false; ///< if true, checks that are normally skipped on replay (e.g. auth checks) cannot be skipped
    optional<fc::microseconds> subjective_cpu_leeway;
    bool trusted_producer_light_validation = false;
    uint32_t snapshot_head_block = 0;
-   boost::asio::thread_pool thread_pool;
+   boost::asio::thread_pool thread_pool;  // 线程池
 
    typedef pair<scope_name, action_name> handler_key;
-   map<account_name, map<handler_key, apply_handler>> apply_handlers;
+   map<account_name, map<handler_key, apply_handler>> apply_handlers;  
 
    /**
     *  Transactions that were undone by pop_block or abort_block, transactions
@@ -260,6 +260,7 @@ struct controller_impl
       }
    }
 
+   // 将某个区块设置为不可逆区块
    void on_irreversible(const block_state_ptr &s)
    {
       if (!blog.head())
@@ -302,6 +303,7 @@ struct controller_impl
       auto objitr = ubi.begin();
       while (objitr != ubi.end() && objitr->blocknum <= s->block_num)
       {
+         // 从reversible_blocks中删除这个区块
          reversible_blocks.remove(*objitr);
          objitr = ubi.begin();
       }
@@ -326,14 +328,16 @@ struct controller_impl
                // when syncing from another chain, this is pushed in again
                EOS_ASSERT(!head || head->block_num == 1, block_validate_exception, "Attempting to re-apply an irreversible block that was not the implied genesis block");
             }
-
+            // 从fork_db中删除这个区块
             fork_db.mark_in_current_chain(head, true);
             fork_db.set_validity(head, true);
          }
-         emit(self.irreversible_block, s);
+         emit(self.irreversible_block, s);   // 发布s为不可逆区块
       }
    }
 
+   // 重新播放区块生产过程
+   
    void replay(std::function<bool()> shutdown)
    {
       auto blog_head = blog.read_head();
@@ -381,14 +385,14 @@ struct controller_impl
    void init(std::function<bool()> shutdown, const snapshot_reader_ptr &snapshot)
    {
 
-      bool report_integrity_hash = !!snapshot;
+      bool report_integrity_hash = !!snapshot;  // 指针为空，双感叹号之后还是false，指针不空，双感叹号之后为true
       if (snapshot)
       {
          EOS_ASSERT(!head, fork_database_exception, "");
          snapshot->validate();
 
          read_from_snapshot(snapshot);
-
+         
          auto end = blog.read_head();
          if (!end)
          {
@@ -1926,9 +1930,12 @@ void controller::add_indices()
    my->add_indices();
 }
 
+// 启动整个链控制器，shutdown函数返回当前程序是否还在运行。
 void controller::startup(std::function<bool()> shutdown, const snapshot_reader_ptr &snapshot)
 {
+   // 从本身数据库读取区块头指针
    my->head = my->fork_db.head();
+   //如果没有读到，需要重新回访区块
    if (!my->head)
    {
       elog("No head block in fork db, perhaps we need to replay");
